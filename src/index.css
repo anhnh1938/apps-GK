@@ -1,0 +1,15 @@
+/* Reset nền đã có từ antd/dist/reset.css; style component thì dùng theme token (src/theme.ts). */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.app-logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+}
