@@ -1,0 +1,92 @@
+.hint {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.help {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.paste {
+  white-space: pre;
+}
+.status {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+/* Danh sách câu: mỗi câu 1 ô sửa riêng */
+.items {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.item {
+  padding: 8px 12px 12px;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  background: #fafaf9;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.itemActive {
+  border-color: #5b4335;
+  background: #faf6f0;
+}
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.itemNo {
+  width: 24px;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #a8a29e;
+}
+.pt {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Ô sửa câu = vùng chữ của thẻ phóng to --edit-scale lần (cùng font, cỡ, giãn dòng, căn giữa).
+   Dòng nào dài quá ô sửa thì trên thẻ cũng dài quá. */
+.textarea {
+  display: block;
+  box-sizing: content-box;
+  width: calc((var(--cell-w) - 0.2cm) * var(--edit-scale));
+  margin: 0 auto;
+  padding: 4px 0;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  resize: none;
+  overflow: hidden;
+  font-family: var(--card-font);
+  font-size: calc(var(--font-size) * var(--edit-scale));
+  font-weight: var(--font-weight);
+  line-height: var(--leading);
+  letter-spacing: calc(var(--tracking) / 1000 * 1em);
+  text-align: center;
+  white-space: pre;
+  color: #000;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.textarea:hover {
+  border-color: #7d6151;
+}
+.textarea:focus {
+  outline: none;
+  border-color: #5b4335;
+  box-shadow: 0 0 0 2px rgb(91 67 53 / 0.15);
+}

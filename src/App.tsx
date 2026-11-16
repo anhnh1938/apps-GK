@@ -1,56 +1,86 @@
-import { useState } from 'react'
-import { App as AntApp, Button, Card, Flex, Layout, Menu, Typography, theme } from 'antd'
-import type { MenuProps } from 'antd'
-import {
-  DashboardOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  SettingOutlined,
-} from '@ant-design/icons'
+import { lazy, Suspense } from 'react'
+import { Button, Result, Spin } from 'antd'
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router'
+import { AuthProvider } from './auth/AuthProvider'
+import { RequireAuth } from './auth/RequireAuth'
+import { AppLayout } from './layouts/AppLayout'
+import { missingFirebaseConfig } from './lib/firebase'
 
-const { Header, Sider, Content } = Layout
+// Mỗi trang tải riêng khi mở
+const LoginPage = lazy(() => import('./auth/LoginPage'))
+const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'))
+const ProductListPage = lazy(() => import('./features/products/ProductListPage'))
+const ProductEditorPage = lazy(() => import('./features/products/ProductEditorPage'))
+const QuoteListPage = lazy(() => import('./features/quote/QuoteListPage'))
+const QuoteEditorPage = lazy(() => import('./features/quote/QuoteEditorPage'))
+const SentencesPage = lazy(() => import('./features/sentences/SentencesPage'))
+const OrderListPage = lazy(() => import('./features/orders/OrderListPage'))
+const OrderEditorPage = lazy(() => import('./features/orders/OrderEditorPage'))
 
-const menuItems: MenuProps['items'] = [
-  { key: 'dashboard', icon: <DashboardOutlined />, label: 'Tổng quan' },
-  { key: 'settings', icon: <SettingOutlined />, label: 'Cài đặt' },
-]
+function NotFound() {
+  return (
+    <Result
+      status="404"
+      title="Không tìm thấy trang"
+      extra={
+        <Link to="/">
+          <Button type="primary">Về trang chính</Button>
+        </Link>
+      }
+    />
+  )
+}
 
 function App() {
-  const [collapsed, setCollapsed] = useState(false)
-  const { message } = AntApp.useApp()
-  const {
-    token: { colorBgContainer },
-  } = theme.useToken()
+  if (missingFirebaseConfig.length) {
+    return (
+      <Result
+        status="warning"
+        title="Thiếu config Firebase"
+        subTitle={`Copy .env.example thành .env.local và điền: ${missingFirebaseConfig.join(', ')} (VITE_FIREBASE_*), rồi chạy lại npm run dev.`}
+      />
+    )
+  }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="light" collapsible collapsed={collapsed} trigger={null}>
-        <div className="app-logo">{collapsed ? 'GK' : 'apps-GK'}</div>
-        <Menu mode="inline" defaultSelectedKeys={['dashboard']} items={menuItems} />
-      </Sider>
-      <Layout>
-        <Header style={{ padding: '0 16px', background: colorBgContainer }}>
-          <Button
-            type="text"
-            aria-label={collapsed ? 'Mở menu' : 'Thu gọn menu'}
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-          />
-        </Header>
-        <Content style={{ margin: 24 }}>
-          <Card title="apps-GK">
-            <Flex vertical gap="middle" align="flex-start">
-              <Typography.Paragraph style={{ margin: 0 }}>
-                Base React + Vite + TypeScript + Ant Design.
-              </Typography.Paragraph>
-              <Button type="primary" onClick={() => message.success('antd đã sẵn sàng')}>
-                Thử antd
-              </Button>
-            </Flex>
-          </Card>
-        </Content>
-      </Layout>
-    </Layout>
+    <AuthProvider>
+      <BrowserRouter>
+        <Suspense
+          fallback={
+            <div className="app-loading">
+              <Spin size="large" />
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="login" element={<LoginPage />} />
+            <Route
+              element={
+                <RequireAuth>
+                  <AppLayout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+              <Route path="bao-gia" element={<QuoteListPage />} />
+              {/* /moi: form trống, chỉ ghi Firestore khi bấm "Tạo" */}
+              <Route path="bao-gia/moi" element={<QuoteEditorPage />} />
+              <Route path="bao-gia/:id" element={<QuoteEditorPage />} />
+              <Route path="bao-gia/:id/mau-cau" element={<SentencesPage />} />
+              <Route path="don-ao" element={<OrderListPage />} />
+              <Route path="don-ao/moi" element={<OrderEditorPage />} />
+              <Route path="don-ao/:id" element={<OrderEditorPage />} />
+              <Route path="san-pham" element={<ProductListPage />} />
+              <Route path="san-pham/moi" element={<ProductEditorPage />} />
+              <Route path="san-pham/:id" element={<ProductEditorPage />} />
+              {/* Trang mẫu câu đứng riêng cũ → mẫu câu giờ mở từ từng báo giá */}
+              <Route path="mau-cau" element={<Navigate to="/bao-gia" replace />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
 

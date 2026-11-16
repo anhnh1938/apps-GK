@@ -1,0 +1,406 @@
+/* Tài liệu in khổ A4 (bản báo giá, phiếu đơn áo): xem trước = bản in = ảnh PNG. Kích thước bám theo bản báo giá gốc (D:\powerpoint\index.html). */
+.root {
+  --brand: #5b4335;
+  --brand-25: rgb(91 67 53 / 0.25);
+  --cream: #faf6f0;
+  --sand: #ece2d4;
+  --stone-200: #e7e5e4;
+  --stone-500: #78716c;
+  --stone-600: #57534e;
+  --stone-700: #44403c;
+  --stone-800: #292524;
+
+  position: relative;
+  z-index: 0;
+  box-sizing: border-box;
+  width: 800px;
+  margin: 0 auto;
+  padding: 44px 48px;
+  background: #fff;
+  color: var(--stone-700);
+  font-family: var(--font-body), Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  box-shadow:
+    0 20px 25px -5px rgb(0 0 0 / 0.1),
+    0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+.root *,
+.root *::before,
+.root *::after {
+  box-sizing: border-box;
+}
+.root h1,
+.root p,
+.root dl,
+.root dd,
+.root ul {
+  margin: 0;
+}
+
+.display {
+  font-family: var(--font-heading), Georgia, serif;
+}
+
+/* Logo mờ giữa báo giá; khi in là position: fixed nên lặp lại giữa mỗi trang */
+.watermark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -10;
+  width: 420px;
+  max-width: none;
+  transform: translate(-50%, -50%);
+  opacity: 0.04;
+  pointer-events: none;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--brand-25);
+  padding-bottom: 16px;
+}
+.docLabel {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: var(--brand);
+}
+.meta {
+  text-align: right;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--stone-500);
+}
+.meta b {
+  font-weight: 600;
+  color: var(--stone-700);
+}
+
+.titleBlock {
+  margin: 32px 0 24px;
+  text-align: center;
+}
+.title {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--brand);
+}
+.subtitle {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--stone-500);
+}
+
+.customer {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 6px 12px;
+  border: 1px solid var(--sand);
+  border-radius: 8px;
+  background: rgb(250 246 240 / 0.6);
+  padding: 16px 20px;
+  font-size: 13px;
+}
+.custKey {
+  color: var(--stone-500);
+}
+.custVal {
+  font-weight: 600;
+  color: var(--stone-800);
+}
+
+.section {
+  margin-top: 28px;
+  break-inside: avoid;
+}
+/* Mục dài (nội dung in) được phép ngắt sang trang sau */
+.sectionFlow {
+  margin-top: 28px;
+}
+.sectionTitle {
+  margin-bottom: 10px;
+  break-after: avoid;
+  border-bottom: 1px solid var(--brand-25);
+  padding-bottom: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  color: var(--brand);
+}
+.sectionNo {
+  font-family: var(--font-body), Arial, sans-serif;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.th {
+  background: var(--sand);
+  padding: 12px 10px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--brand);
+}
+.thHalf {
+  width: 50%;
+}
+.td {
+  border-bottom: 1px solid var(--stone-200);
+  padding: 12px 10px;
+  text-align: center;
+}
+.left {
+  text-align: left;
+}
+.semibold {
+  font-weight: 600;
+}
+.productName {
+  font-weight: 500;
+}
+.productDetail {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--stone-500);
+}
+.totalRow {
+  background: var(--cream);
+  font-weight: 700;
+}
+.emptyRow {
+  font-style: italic;
+  color: #a8a29e;
+}
+.applied {
+  background: var(--cream);
+  font-weight: 600;
+}
+.badge {
+  margin-left: 8px;
+  border-radius: 9999px;
+  background: var(--brand);
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--cream);
+}
+
+.printBox {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  border: 1px solid var(--sand);
+  border-radius: 8px;
+  background: rgb(250 246 240 / 0.4);
+  padding: 16px 20px;
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--stone-700);
+}
+.printText {
+  white-space: pre-line;
+}
+.printImages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.printText + .printImages {
+  margin-top: 12px;
+}
+.imgSingle,
+.imgMulti {
+  border-radius: 6px;
+  background: #fff;
+}
+.imgSingle {
+  max-width: 100%;
+  max-height: 288px;
+}
+.imgMulti {
+  max-width: 48%;
+  max-height: 160px;
+}
+
+.infoList {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--stone-600);
+}
+.infoList li + li {
+  margin-top: 4px;
+}
+
+/* Tổng tiền và QR luôn đi liền nhau, không bị cắt sang trang khác khi in */
+.payBox {
+  margin-top: 28px;
+  break-inside: avoid;
+  border: 1px solid var(--sand);
+  border-radius: 8px;
+  background: var(--cream);
+}
+.payRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  color: var(--brand);
+}
+.payLabel {
+  font-size: 13px;
+  line-height: 1.625;
+}
+.payLabelTitle {
+  font-weight: 600;
+  letter-spacing: 0.15em;
+}
+.payNote {
+  font-size: 11px;
+  color: var(--stone-500);
+}
+.grand {
+  font-size: 28px;
+  font-weight: 800;
+}
+.unpriced {
+  margin-top: -12px;
+  padding: 0 24px 12px;
+  text-align: right;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--stone-500);
+}
+/* Đã nhận X% / còn lại */
+.payDetail {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -8px;
+  padding: 0 24px 16px;
+  font-size: 13px;
+  color: var(--brand);
+}
+.payment {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-top: 1px solid var(--sand);
+  padding: 20px;
+}
+.qr {
+  width: 144px;
+  height: 144px;
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+.paymentBody {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+}
+.paymentTitle {
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  color: var(--brand);
+}
+.bank {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 4px 12px;
+}
+.bank dt {
+  color: var(--stone-500);
+}
+.bank dd {
+  font-weight: 600;
+}
+.bankFull {
+  font-weight: 400;
+  color: var(--stone-500);
+}
+.amount {
+  color: var(--brand);
+}
+
+.footer {
+  margin-top: 32px;
+  border-top: 1px solid var(--stone-200);
+  padding-top: 16px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 2;
+  color: var(--stone-500);
+}
+.footerBrand {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.emoji {
+  display: inline-block;
+  width: 1.2em;
+  height: 1.2em;
+  margin: 0 0.05em;
+  vertical-align: -0.22em;
+}
+
+@media print {
+  .root,
+  .root * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Lề trang là 0 (xem index.css); lề thật là padding này, clone để lặp lại ở mỗi trang */
+  .root {
+    width: 100%;
+    padding: 12mm 14mm;
+    box-shadow: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .watermark {
+    position: fixed;
+  }
+  .titleBlock {
+    margin: 24px 0 20px;
+  }
+  .section,
+  .sectionFlow,
+  .payBox {
+    margin-top: 20px;
+  }
+  .th {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .td {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .imgSingle {
+    max-height: 192px;
+  }
+  .imgMulti {
+    max-height: 128px;
+  }
+  .qr {
+    width: 128px;
+    height: 128px;
+  }
+}

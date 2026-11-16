@@ -2,14 +2,86 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 .app-logo {
-  height: 64px;
   display: flex;
   align-items: center;
+  gap: 10px;
+  height: 64px;
+  padding: 0 20px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #5b4335;
+}
+.app-logo img {
+  height: 40px;
+  width: auto;
+  flex-shrink: 0;
+}
+.app-logo--collapsed {
   justify-content: center;
-  font-size: 18px;
-  font-weight: 600;
+  padding: 0;
+}
+
+.app-sider {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.app-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px;
+  padding: 8px;
+  border-top: 1px solid #ece2d4;
+}
+.app-user--collapsed {
+  flex-direction: column;
+  margin: 8px 4px;
+  padding: 8px 0;
+}
+
+.app-loading {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+}
+
+/* ===== In =====
+   Lề trang = 0 để Chrome không chèn ngày giờ / đường dẫn vào bản in; mỗi app tự lo lề bằng padding.
+   Mọi thứ không thuộc bản in gắn class "no-print". */
+@page {
+  size: A4;
+  margin: 0;
+}
+/* Tem vận chuyển (ShippingLabel) chỉ hiện khi in tem — xem lib/printLabel.ts */
+.shipping-label-root {
+  display: none;
+}
+
+@media print {
+  .no-print,
+  .ant-message,
+  .ant-notification {
+    display: none !important;
+  }
+  html.printing-label #root {
+    display: none !important;
+  }
+  html.printing-label .shipping-label-root {
+    display: block;
+  }
+  html,
+  body,
+  #root,
+  .app-layout,
+  .app-main {
+    background: #fff !important;
+  }
 }

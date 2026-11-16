@@ -1,0 +1,14 @@
+[
+  {
+    "email": "chushop@gmail.com",
+    "name": "Chủ shop",
+    "role": "admin",
+    "password": "doi-mat-khau-nay"
+  },
+  {
+    "email": "nhanvien@gmail.com",
+    "name": "Nhân viên",
+    "role": "staff",
+    "password": "doi-mat-khau-nay"
+  }
+]

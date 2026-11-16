@@ -1,0 +1,116 @@
+rules_version = '2';
+
+// Firestore rules của project my-apps-7797f — DÙNG CHUNG cho my-apps (trang CV) và apps-GK (Góc Kể Studio).
+// Một database chỉ có MỘT bộ rules: publish bản này là thay toàn bộ rules đang chạy.
+// Phần my-apps phải giữ y như D:\projects\my-apps\firestore.rules; sửa bên nào thì chép sang bên kia.
+// Hướng dẫn và cấu trúc dữ liệu: docs/firestore.md
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== my-apps: trang CV — chỉ server (Admin SDK) đọc/ghi, trình duyệt bị chặn =====
+    match /content/cv {
+      allow read, write: if false;
+    }
+
+    // ===== apps-GK =====
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email is string;
+    }
+
+    // Chỉ email có document trong gk_members mới dùng được app (tài khoản đăng nhập thôi là chưa đủ)
+    function isGkMember() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/gk_members/$(request.auth.token.email.lower()));
+    }
+
+    // Trạng thái: unpaid (Chưa nhận tiền) → paid (Đã nhận tiền, paidPercent %) → shipped (Đã mang ra bưu cục).
+    // Chỉ đi một chiều, không quay lại. "done" là trạng thái cũ của đơn áo, coi như "paid".
+    function validStatusChange(before, after) {
+      return after in ['unpaid', 'paid', 'shipped', 'done']
+        && (before == after
+          || (before == 'unpaid' && after == 'paid')
+          || (before in ['paid', 'done'] && after in ['paid', 'shipped']));
+    }
+
+    function validPercent(data) {
+      return !('paidPercent' in data) || data.paidPercent == null
+        || (data.paidPercent is number && data.paidPercent > 0 && data.paidPercent <= 100);
+    }
+
+    // Field được đổi khi document đã khoá: trạng thái, % đã nhận, thời điểm, vận chuyển
+    function onlyStatusFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'paidPercent', 'statusAt', 'shipping', 'updatedAt', 'updatedBy']);
+    }
+
+    // Danh sách người được dùng app — chỉ thêm / sửa trong Firebase Console
+    match /gk_members/{email} {
+      allow get: if isSignedIn() && request.auth.token.email.lower() == email;
+      allow list, write: if false;
+    }
+
+    // Báo giá chưa nhận tiền (hoặc chưa tồn tại) thì còn sửa được
+    function quoteUnlocked(quoteId) {
+      let path = /databases/$(database)/documents/gk_quotes/$(quoteId);
+      return !exists(path) || get(path).data.status == 'unpaid';
+    }
+
+    // Báo giá mác áo rời. Đã nhận tiền / đã mang ra bưu cục = KHOÁ: không sửa nội dung, không xoá, không thêm/xoá ảnh.
+    // Vẫn được: đổi trạng thái tiếp theo, sửa % đã nhận, thông tin vận chuyển, đánh dấu đã in mã.
+    match /gk_quotes/{quoteId} {
+      allow read: if isGkMember();
+      allow create: if isGkMember()
+        && request.resource.data.status == 'unpaid' && validPercent(request.resource.data);
+      allow update: if isGkMember()
+        && validStatusChange(resource.data.status, request.resource.data.status)
+        && validPercent(request.resource.data)
+        && (resource.data.status == 'unpaid' || onlyStatusFields());
+      allow delete: if isGkMember() && resource.data.status == 'unpaid';
+
+      match /images/{imageId} {
+        allow read: if isGkMember();
+        allow create, delete: if isGkMember() && quoteUnlocked(quoteId);
+      }
+    }
+
+    // Đơn chưa mang ra bưu cục (hoặc chưa tồn tại) thì còn sửa được
+    function orderUnlocked(orderId) {
+      let path = /databases/$(database)/documents/gk_orders/$(orderId);
+      return !exists(path) || get(path).data.status != 'shipped';
+    }
+
+    // Đơn áo. Đã mang ra bưu cục = KHOÁ: không sửa nội dung, không xoá, không thêm/xoá ảnh.
+    // Vẫn được: sửa % đã nhận, thông tin vận chuyển, đánh dấu đã in mã.
+    match /gk_orders/{orderId} {
+      allow read: if isGkMember();
+      allow create: if isGkMember()
+        && request.resource.data.status == 'unpaid' && validPercent(request.resource.data);
+      allow update: if isGkMember()
+        && validStatusChange(resource.data.status, request.resource.data.status)
+        && validPercent(request.resource.data)
+        && (resource.data.status != 'shipped' || onlyStatusFields());
+      allow delete: if isGkMember() && resource.data.status != 'shipped';
+
+      match /images/{imageId} {
+        allow read: if isGkMember();
+        allow create, delete: if isGkMember() && orderUnlocked(orderId);
+      }
+    }
+
+    // Sản phẩm (bảng giá mác áo theo số lượng, giá / màu / size áo). Ai trong gk_members cũng xem được,
+    // chỉ role "admin" được thêm / sửa / xoá.
+    function isGkAdmin() {
+      return isGkMember()
+        && get(/databases/$(database)/documents/gk_members/$(request.auth.token.email.lower())).data.role == 'admin';
+    }
+    match /gk_products/{productId} {
+      allow read: if isGkMember();
+      allow write: if isGkAdmin();
+    }
+
+    // Mọi thứ khác (kể cả collection sau này chưa viết rules): chặn
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

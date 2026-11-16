@@ -1,0 +1,40 @@
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stat {
+  min-width: 180px;
+  padding: 12px 16px;
+  border: 1px solid #ece2d4;
+  border-radius: 12px;
+  background: #fff;
+}
+.statLabel {
+  font-size: 12px;
+  color: #78716c;
+}
+.statValue {
+  font-size: 20px;
+  font-weight: 800;
+  color: #5b4335;
+}
+.sub {
+  display: block;
+  font-size: 12px;
+  color: #78716c;
+}

@@ -30,3 +30,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Firebase: danh sách người dùng (có mật khẩu) và bản sao lưu rules
+firebase/members.local.json
+firebase/backup/

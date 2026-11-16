@@ -1,0 +1,202 @@
+/* Biểu đồ Dashboard — thông số theo skill dataviz: cột ≤ 24px, đầu bo 4px, khe 2px màu nền,
+   lưới mảnh 1px liền, chữ dùng màu chữ (không dùng màu dữ liệu). Bảng màu đã chạy validator (light, nền #fff). */
+.viz {
+  --surface: #ffffff;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  /* Hai nguồn doanh thu (categorical slot 1, 2) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  /* 3 bước trạng thái (ordinal, một tông xanh nhạt → đậm) */
+  --step-1: #86b6ef;
+  --step-2: #3987e5;
+  --step-3: #184f95;
+  position: relative;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--text-primary);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.chart {
+  position: relative;
+  width: 100%;
+}
+.chart svg {
+  display: block;
+  overflow: visible;
+}
+.grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.baseline {
+  stroke: var(--axis);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.tick {
+  font-size: 11px;
+  fill: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  opacity: 0.45;
+}
+.hit {
+  cursor: default;
+  outline: none;
+}
+.hit:focus-visible {
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+}
+.band {
+  fill: var(--text-primary);
+  opacity: 0.04;
+}
+
+.tooltip {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  min-width: 170px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgb(11 11 11 / 0.1),
+    0 6px 16px rgb(0 0 0 / 0.12);
+  font-size: 12px;
+  pointer-events: none;
+}
+.tipTitle {
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+}
+.tipRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.7;
+}
+.tipRow b {
+  font-variant-numeric: tabular-nums;
+}
+.tipRow span {
+  color: var(--text-secondary);
+}
+.tipKey {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.tipTotal {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--grid);
+}
+
+/* Thanh chia phần (tall segmented bar): 28px, mỗi phần bo 4px, khe 2px */
+.segRow + .segRow {
+  margin-top: 14px;
+}
+.segLabel {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.segLabel b {
+  color: var(--text-primary);
+}
+.segBar {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+}
+.seg {
+  display: flex;
+  align-items: center;
+  min-width: 4px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.segEmpty {
+  flex: 1;
+  border-radius: 4px;
+  background: var(--grid);
+}
+
+/* Thanh xếp hạng (ranked bars) */
+.rankTitle {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.rankTitle + .rankRow {
+  margin-top: 0;
+}
+.rankRow {
+  display: grid;
+  grid-template-columns: minmax(80px, 34%) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.rankName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.rankTrack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rankBar {
+  height: 12px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--series-1);
+}
+.rankValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}

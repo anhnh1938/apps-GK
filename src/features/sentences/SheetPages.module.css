@@ -1,0 +1,154 @@
+/* Tờ A4 xếp ô cắt. Kích thước lấy từ biến CSS (SHEET_VARS trong constants.ts), gắn ở SentencesPage. */
+.page {
+  box-sizing: border-box;
+  width: var(--page-w);
+  height: var(--page-h);
+  padding: var(--pad);
+  margin: 0 auto;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), var(--cell-w));
+  grid-template-rows: repeat(var(--rows), var(--cell-h));
+  gap: var(--gap);
+  /* Lưới nằm giữa tờ: lề trái = phải, trên = dưới */
+  justify-content: center;
+  align-content: center;
+  background: #fff;
+  /* Cùng bóng với bản báo giá */
+  box-shadow:
+    0 20px 25px -5px rgb(0 0 0 / 0.1),
+    0 8px 10px -6px rgb(0 0 0 / 0.1);
+  font-family: var(--card-font);
+  -webkit-font-smoothing: antialiased;
+}
+.page + .page {
+  margin-top: 24px;
+}
+
+.cell {
+  /* Nét đứt tự vẽ (4 gradient) để chỉnh được độ dài nét và khoảng cách — border: dashed không làm được */
+  --line: 1px;
+  --dash: 3px;
+  --dash-gap: 7px;
+  --line-color: #000;
+  --step: calc(var(--dash) + var(--dash-gap));
+  /* Màu từng cạnh. Ô sát nhau thì cạnh chung chỉ vẽ 1 lần (xem .noR, .noB) */
+  --c-top: var(--line-color);
+  --c-bottom: var(--line-color);
+  --c-left: var(--line-color);
+  --c-right: var(--line-color);
+
+  position: relative;
+  box-sizing: border-box;
+  width: var(--cell-w);
+  height: var(--cell-h);
+  padding: 3px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(to right, var(--c-top) var(--dash), transparent 0) top left / var(--step) var(--line) repeat-x,
+    linear-gradient(to right, var(--c-bottom) var(--dash), transparent 0) bottom left / var(--step) var(--line) repeat-x,
+    linear-gradient(to bottom, var(--c-left) var(--dash), transparent 0) top left / var(--line) var(--step) repeat-y,
+    linear-gradient(to bottom, var(--c-right) var(--dash), transparent 0) top right / var(--line) var(--step) repeat-y;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+/* Ô không có nội dung: bỏ viền nét đứt */
+.empty {
+  background: none;
+}
+/* Cạnh chung với ô có nội dung bên phải / bên dưới: để ô kia vẽ, tránh thành nét đôi */
+.noR {
+  --c-right: transparent;
+}
+.noB {
+  --c-bottom: transparent;
+}
+
+/* Chữ hiển thị y nguyên như gõ (giữ xuống dòng, dấu cách). Cỡ chữ do fitText() gán trực tiếp. */
+.text {
+  margin: 0;
+  width: 100%;
+  font: inherit;
+  font-size: var(--font-size);
+  line-height: var(--leading);
+  letter-spacing: calc(var(--tracking) / 1000 * 1em);
+  font-weight: var(--font-weight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: center;
+  color: #000;
+}
+
+/* Emoji kiểu iPhone, cao cỡ chữ như trên iOS */
+.emoji {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 0.05em;
+  vertical-align: -0.2em;
+}
+
+/* Ô ảnh: ảnh co vừa ô, giữ tỉ lệ */
+.photo {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.missing {
+  font-size: 7pt;
+  color: #e11;
+  text-align: center;
+}
+
+/* Chỉ trên màn hình: số thứ tự câu ở góc ô, ô đang sửa, ô tràn chữ */
+@media screen {
+  .cell[data-n] {
+    cursor: pointer;
+  }
+  .cell[data-n]::before {
+    content: attr(data-n);
+    position: absolute;
+    top: 2px;
+    left: 3px;
+    font: 7px/1 system-ui, sans-serif;
+    color: #aaa;
+  }
+  .cell[data-overflow] {
+    outline: 2px solid #e11;
+    outline-offset: -2px;
+  }
+  .active {
+    outline: 2px solid #5b4335;
+    outline-offset: -2px;
+    background-color: #faf6f0;
+  }
+}
+
+/* Đang xuất ảnh: bỏ các thứ chỉ dành cho màn hình, để ảnh giống bản in */
+:global(.sheet-exporting) .cell {
+  outline: none;
+  background-color: transparent;
+}
+:global(.sheet-exporting) .missing,
+:global(.sheet-exporting) .cell[data-n]::before {
+  display: none;
+}
+
+@media print {
+  .page,
+  .page + .page {
+    margin: 0;
+    box-shadow: none;
+  }
+  /* Mỗi tờ A4 in ra 1 trang */
+  .page:not(:last-child) {
+    break-after: page;
+  }
+  .missing {
+    display: none;
+  }
+}

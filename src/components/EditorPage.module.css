@@ -1,0 +1,59 @@
+/* Trang sửa: form bên trái, bản xem trước (bản in) bên phải. Thanh công cụ ở PageShell. */
+.grid {
+  display: grid;
+  gap: 24px;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.previewCol {
+  min-width: 0;
+}
+.previewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.previewScroll {
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+/* Đủ rộng thì form bên trái, bản xem trước (--preview-w) bên phải */
+@container (min-width: 1240px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) var(--preview-w);
+    align-items: start;
+  }
+  /* Bản xem trước dính dưới thanh công cụ, cuộn riêng — sửa form vẫn thấy bản in */
+  .sticky {
+    position: sticky;
+    top: 88px;
+    max-height: calc(100vh - 104px);
+    overflow: auto;
+    padding: 0 8px;
+    margin: 0 -8px;
+  }
+}
+
+@media print {
+  .grid {
+    display: block;
+  }
+  .previewCol {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    margin: 0;
+  }
+  .previewScroll {
+    overflow: visible;
+    padding: 0;
+  }
+}

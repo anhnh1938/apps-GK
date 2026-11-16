@@ -1,0 +1,100 @@
+/* Tem dán gói hàng 100 × 150 mm (khổ tem in nhiệt phổ biến). Chỉ hiện khi in (html.printing-label). */
+.label {
+  box-sizing: border-box;
+  width: 100mm;
+  height: 150mm;
+  padding: 4mm;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5mm;
+  overflow: hidden;
+  font-family: 'Inter', Arial, sans-serif;
+  color: #000;
+  background: #fff;
+}
+.label * {
+  box-sizing: border-box;
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3mm;
+  padding-bottom: 2mm;
+  border-bottom: 0.4mm solid #000;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 2mm;
+  font-size: 11pt;
+  font-weight: 800;
+}
+.brand img {
+  height: 9mm;
+  width: auto;
+}
+.carrier {
+  font-size: 12pt;
+  font-weight: 800;
+  text-align: right;
+}
+.barcode {
+  text-align: center;
+}
+.barcode svg {
+  width: 100%;
+  height: 18mm;
+}
+.code {
+  margin-top: 1mm;
+  font-size: 15pt;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.box {
+  padding: 2mm 2.5mm;
+  border: 0.3mm solid #000;
+  border-radius: 1.5mm;
+  font-size: 9pt;
+  line-height: 1.35;
+}
+.boxTitle {
+  margin-bottom: 0.5mm;
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.big {
+  font-size: 12pt;
+  font-weight: 800;
+}
+.address {
+  font-size: 10pt;
+  white-space: pre-line;
+}
+.grow {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.cod {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2mm 2.5mm;
+  border: 0.5mm solid #000;
+  border-radius: 1.5mm;
+  font-size: 10pt;
+  font-weight: 700;
+}
+.codValue {
+  font-size: 15pt;
+  font-weight: 800;
+}
+.foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 7.5pt;
+}
