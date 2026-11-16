@@ -9,12 +9,10 @@ export const PAY_STATUSES = [
 ] as const satisfies readonly { value: PayStatus; label: string; color: string }[]
 
 /**
- * Trạng thái chỉ đi một chiều: Chưa nhận tiền → Đã nhận tiền → Đã mang ra bưu cục (không quay lại).
- * Đã nhận tiền / đã mang ra bưu cục vẫn sửa được % đã nhận. Firestore rules cũng chặn y như vậy.
+ * Trạng thái đi tới từng bước: Chưa nhận tiền → Đã nhận tiền → Đã mang ra bưu cục; bấm nhầm thì lùi lại đúng một bước.
+ * Đã nhận tiền / đã mang ra bưu cục vẫn sửa được % đã nhận. Firestore rules (`validStatusChange`) chặn y như vậy.
  */
-const NEXT: Record<PayStatus, PayStatus | null> = { unpaid: 'paid', paid: 'shipped', shipped: null }
-export const canSelectStatus = (from: PayStatus, to: PayStatus) =>
-  to === from || NEXT[from] === to || (to === 'paid' && from !== 'unpaid') // chọn lại "Đã nhận tiền" = sửa %
+export const PREV_STATUS: Record<PayStatus, PayStatus | null> = { unpaid: null, paid: 'unpaid', shipped: 'paid' }
 
 /** Mức % gợi ý khi chọn "Đã nhận tiền" */
 export const PERCENT_PRESETS = [30, 50, 100] as const

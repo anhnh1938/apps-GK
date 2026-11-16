@@ -1,13 +1,20 @@
 import type { PayStatus, ShippingInfo } from '../../lib/payment'
-import type { PriceTier } from '../products/types'
+import type { PriceTier, PrintKind, ProductColor } from '../products/types'
 
 export type FontKey = 'inter' | 'outfit' | 'classic' | 'soft' | 'modern' | 'handmade' | 'original'
 
+/** Sản phẩm mác áo chụp từ Quản lý sản phẩm lúc tạo báo giá (đổi sản phẩm sau này không làm sai báo giá cũ) */
 export interface Product {
   id: string
   name: string
-  /** Bảng giá theo số lượng (chụp từ Quản lý sản phẩm lúc tạo báo giá) */
+  /** Bảng giá theo số lượng */
   tiers: PriceTier[]
+  /** Số lượng tự tính theo số câu (`text`) hay số ảnh (`image`) của "Nội dung in" */
+  printKind: PrintKind
+  /** Màu tag để chọn */
+  colors: ProductColor[]
+  /** Kích thước tag để chọn */
+  sizes: string[]
 }
 
 export interface QuoteItem {

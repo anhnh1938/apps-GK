@@ -5,10 +5,20 @@ import { toDate } from '../../lib/firestoreHooks'
 import { addImageSrc, deleteWithImages } from '../../lib/images'
 import type { PendingImage } from '../../lib/images'
 import type { ShippingInfo } from '../../lib/payment'
-import { initialStatusFields, printedUpdate, readStatusFields, shippingUpdate, statusUpdate } from '../../lib/statusFields'
+import {
+  backToPaidUpdate,
+  backToUnpaidUpdate,
+  initialStatusFields,
+  paidUpdate,
+  percentUpdate,
+  printedUpdate,
+  readStatusFields,
+  shippedUpdate,
+  shippingUpdate,
+} from '../../lib/statusFields'
 import { uid } from '../../lib/file'
 import { defaultOrderContent, orderTotals } from './state'
-import type { OrderContent, OrderDoc, OrderItem, OrderStatus, OrderTotals } from './types'
+import type { OrderContent, OrderDoc, OrderItem, OrderTotals } from './types'
 
 // Đơn áo: collection gk_orders. Cấu trúc đầy đủ: docs/firestore.md
 
@@ -54,13 +64,8 @@ export function toOrder(snap: DocumentSnapshot): OrderDoc {
 
 const stamp = () => ({ updatedAt: serverTimestamp(), updatedBy: currentEmail() })
 
-/** Ghi đơn áo mới lên Firestore — CHỈ gọi khi người dùng bấm "Tạo đơn áo". Trả về id. */
-export async function createOrder(
-  content: OrderContent,
-  status: OrderStatus,
-  paidPercent: number | null,
-  images: PendingImage[] = [],
-) {
+/** Ghi đơn áo mới lên Firestore (luôn ở "Chưa nhận tiền") — CHỈ gọi khi bấm "Tạo đơn áo". Trả về id. */
+export async function createOrder(content: OrderContent, images: PendingImage[] = []) {
   const ref = await addDoc(collection(db, COL.orders), {
     ...content,
     totals: orderTotals(content),
@@ -70,7 +75,6 @@ export async function createOrder(
     ...stamp(),
   })
   for (const img of images) await addImageSrc(ref, img.kind, img.name, img.src)
-  if (status !== 'unpaid') await setOrderStatus(ref.id, status, paidPercent)
   return ref.id
 }
 
@@ -78,8 +82,14 @@ export async function createOrder(
 export const saveOrderContent = (id: string, content: OrderContent) =>
   updateDoc(orderRef(id), { ...content, totals: orderTotals(content), ...stamp() })
 
-export const setOrderStatus = (id: string, status: OrderStatus, paidPercent: number | null) =>
-  updateDoc(orderRef(id), { ...statusUpdate(status, paidPercent), ...stamp() })
+// Trạng thái: đi tới từng bước, lùi lại được một bước. Đã mang ra bưu cục thì đơn bị khoá → trang sửa lưu nốt nội dung
+// trước khi gọi markOrderShipped; lùi về "Đã nhận tiền" thì mở khoá lại.
+export const markOrderPaid = (id: string, percent: number) => updateDoc(orderRef(id), { ...paidUpdate(percent), ...stamp() })
+export const setOrderPaidPercent = (id: string, percent: number) =>
+  updateDoc(orderRef(id), { ...percentUpdate(percent), ...stamp() })
+export const markOrderShipped = (id: string) => updateDoc(orderRef(id), { ...shippedUpdate(), ...stamp() })
+export const revertOrderToUnpaid = (id: string) => updateDoc(orderRef(id), { ...backToUnpaidUpdate(), ...stamp() })
+export const revertOrderToPaid = (id: string) => updateDoc(orderRef(id), { ...backToPaidUpdate(), ...stamp() })
 
 export const saveOrderShipping = (id: string, s: Pick<ShippingInfo, 'carrier' | 'trackingCode'>) =>
   updateDoc(orderRef(id), { ...shippingUpdate(s), ...stamp() })

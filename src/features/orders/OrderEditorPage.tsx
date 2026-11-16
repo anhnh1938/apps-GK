@@ -5,7 +5,7 @@ import { toBlob } from 'html-to-image'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EditorPage } from '../../components/EditorPage'
 import { PaymentStatusCard, PaymentTag } from '../../components/PaymentStatus'
-import type { PaymentValue } from '../../components/PaymentStatus'
+import type { PaymentActions, PaymentValue } from '../../components/PaymentStatus'
 import { ShippingCard } from '../../components/ShippingCard'
 import { ShippingLabel } from '../../components/ShippingLabel'
 import { SaveIndicator } from '../../components/Status'
@@ -15,13 +15,14 @@ import { slug } from '../../lib/format'
 import { addImage, readImageForFirestore, removeImage, useImages } from '../../lib/images'
 import type { PendingImage } from '../../lib/images'
 import { EMPTY_SHIPPING, paymentAmounts } from '../../lib/payment'
+import type { StatusAtPatch } from '../../lib/statusFields'
 import { useAutosave } from '../../lib/useAutosave'
 import { useBeforeUnload } from '../../lib/useBeforeUnload'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { useShipping } from '../../lib/useShipping'
 import { useProducts } from '../products/repo'
 import type { ProductDoc } from '../products/types'
-import { MAX_ORDER_IMAGE, shirtProductsOf } from './constants'
+import { MAX_ORDER_IMAGE, ORDER_PAYMENT_NOTES, shirtProductsOf } from './constants'
 import { OrderForm } from './OrderForm'
 import { OrderSlip } from './OrderSlip'
 import {
@@ -32,8 +33,12 @@ import {
   orderRef,
   saveOrderContent,
   saveOrderShipping,
-  setOrderStatus,
+  markOrderPaid,
+  markOrderShipped,
+  setOrderPaidPercent,
   toOrder,
+  revertOrderToPaid,
+  revertOrderToUnpaid,
 } from './repo'
 import { defaultOrderContent, itemsSummary, orderCode, orderTotals } from './state'
 import type { OrderContent, OrderDoc } from './types'
@@ -108,8 +113,9 @@ function OrderEditor({ order, initial }: { order: OrderDoc | null; initial: Orde
   const name = content.recipient.name
   // Đã mang ra bưu cục → khoá: không sửa nội dung, không xoá (rules Firestore cũng chặn).
   // Vẫn sửa được % đã nhận và thông tin vận chuyển / in mã.
-  const shipped = !isNew && pay.status === 'shipped'
-  const locked = shipped
+  // Đã nhận tiền trở đi: nhập vận chuyển + in mã. Đã mang ra bưu cục → khoá nội dung (rules cũng chặn).
+  const shippable = !isNew && pay.status !== 'unpaid'
+  const locked = !isNew && pay.status === 'shipped'
   useDocumentTitle(name ? `Đơn áo · ${name}` : isNew ? 'Đơn áo mới' : 'Đơn áo')
 
   const { products } = useProducts()
@@ -159,23 +165,42 @@ function OrderEditor({ order, initial }: { order: OrderDoc | null; initial: Orde
     removeImage(ref, imageId).catch((err) => message.error(firestoreErrorText(err)))
   }
 
-  // Trạng thái chỉ đi một chiều (PaymentStatusSelect chặn sẵn): Chưa nhận → Đã nhận (%) → Đã mang ra bưu cục
-  const changePay = (next: PaymentValue) => {
-    const prev = pay
-    setPay(next)
-    setStatusAt((at) => ({ ...at, [next.status]: at[next.status] ?? new Date() }))
+  // Trạng thái: hiện ngay trên giao diện rồi ghi; ghi lỗi thì trả lại như cũ + báo lỗi (và ném lại cho hộp thoại)
+  // `at`: mốc giờ đổi theo (Date = vừa xong bước đó, null = bỏ mốc khi lùi lại)
+  const applyPayment = async (next: PaymentValue, at: StatusAtPatch | null, write: (id: string) => Promise<void>) => {
     if (!order) return
-    setOrderStatus(order.id, next.status, next.paidPercent).catch((err) => {
-      setPay(prev)
+    const prev = { pay, statusAt }
+    setPay(next)
+    if (at) setStatusAt((cur) => ({ ...cur, ...at }))
+    try {
+      await write(order.id)
+    } catch (err) {
+      setPay(prev.pay)
+      setStatusAt(prev.statusAt)
       message.error(firestoreErrorText(err))
-    })
+      throw err
+    }
+  }
+  const paymentActions: PaymentActions = {
+    paid: (percent) => applyPayment({ status: 'paid', paidPercent: percent }, { paid: new Date() }, (id) => markOrderPaid(id, percent)),
+    percent: (percent) => applyPayment({ ...pay, paidPercent: percent }, null, (id) => setOrderPaidPercent(id, percent)),
+    // Đã mang ra bưu cục → đơn bị khoá: lưu nốt nội dung đang sửa trước, sau đó rules không cho ghi nội dung nữa
+    shipped: () =>
+      applyPayment({ ...pay, status: 'shipped' }, { shipped: new Date() }, async (id) => {
+        await saveOrderContent(id, content)
+        await markOrderShipped(id)
+      }),
+    backToUnpaid: () =>
+      applyPayment({ status: 'unpaid', paidPercent: null }, { paid: null, shipped: null }, (id) => revertOrderToUnpaid(id)),
+    // Lùi về "Đã nhận tiền" → đơn mở khoá, sửa / xoá được lại
+    backToPaid: () => applyPayment({ ...pay, status: 'paid' }, { shipped: null }, (id) => revertOrderToPaid(id)),
   }
 
   const create = async () => {
     setCreating(true)
     try {
       // Đơn mới luôn bắt đầu ở "Chưa nhận tiền"; đổi trạng thái sau khi tạo
-      const id = await createOrder(content, 'unpaid', null, pending)
+      const id = await createOrder(content, pending)
       message.success(`Đã tạo đơn ${orderCode(id)}`)
       navigate(`/don-ao/${id}`, { replace: true })
     } catch (err) {
@@ -264,7 +289,7 @@ function OrderEditor({ order, initial }: { order: OrderDoc | null; initial: Orde
                 </Button>
               </Popconfirm>
             )}
-            {shipped && (
+            {shippable && (
               <Button icon={<CarOutlined />} onClick={shipping.print}>
                 In mã vận chuyển
               </Button>
@@ -287,12 +312,13 @@ function OrderEditor({ order, initial }: { order: OrderDoc | null; initial: Orde
             {order && (
               <PaymentStatusCard
                 value={pay}
-                onChange={changePay}
+                actions={paymentActions}
                 grand={totals.grand}
                 statusAt={statusAt}
+                notes={ORDER_PAYMENT_NOTES}
               />
             )}
-            {shipped && (
+            {shippable && (
               <ShippingCard
                 value={shipping.value}
                 onChange={shipping.setValue}
@@ -340,7 +366,7 @@ function OrderEditor({ order, initial }: { order: OrderDoc | null; initial: Orde
         }
         previewWidth="800px"
       />
-      {shipped && order && (
+      {shippable && order && (
         <ShippingLabel
           data={{
             code: orderCode(order.id),

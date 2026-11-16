@@ -24,12 +24,13 @@ service cloud.firestore {
     }
 
     // Trạng thái: unpaid (Chưa nhận tiền) → paid (Đã nhận tiền, paidPercent %) → shipped (Đã mang ra bưu cục).
-    // Chỉ đi một chiều, không quay lại. "done" là trạng thái cũ của đơn áo, coi như "paid".
+    // Đi tới hoặc lùi đúng một bước (bấm nhầm): paid → unpaid, shipped → paid. "done" là trạng thái cũ, coi như "paid".
     function validStatusChange(before, after) {
       return after in ['unpaid', 'paid', 'shipped', 'done']
         && (before == after
           || (before == 'unpaid' && after == 'paid')
-          || (before in ['paid', 'done'] && after in ['paid', 'shipped']));
+          || (before in ['paid', 'done'] && after in ['paid', 'shipped', 'unpaid'])
+          || (before == 'shipped' && after == 'paid'));
     }
 
     function validPercent(data) {

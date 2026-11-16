@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { EmojiText } from '../../components/EmojiText'
-import { COLS, GAP, MAX_PT, MIN_PT, PER_PAGE, STEP_PT } from './constants'
+import { COLS, GAP, MAX_PT, MIN_PT, PER_PAGE, SHEET_VARS, STEP_PT } from './constants'
 import { clean } from './state'
 import type { CellImage } from './state'
 import s from './SheetPages.module.css'
@@ -20,9 +20,14 @@ interface Props {
   /** Ô ảnh, xếp sau các câu */
   images: CellImage[]
   /** Câu đang sửa (số thứ tự từ 1) */
-  activeN: number | null
-  onCellClick: (n: number) => void
-  onFit: (result: FitResult) => void
+  activeN?: number | null
+  onCellClick?: (n: number) => void
+  onFit?: (result: FitResult) => void
+  /**
+   * `pages` (mặc định): các tờ A4 đủ ô như bản in — trang Mẫu câu.
+   * `cards`: chỉ các ô có nội dung, cỡ thật, xếp liền nhau — mục "Nội dung in" của bản xem trước báo giá.
+   */
+  layout?: 'pages' | 'cards'
 }
 
 type Cell = { kind: 'text'; text: string; n: number } | { kind: 'image'; img: CellImage }
@@ -59,7 +64,14 @@ function ImageCell({ img }: { img: CellImage }) {
 }
 
 /** Các tờ A4: hết ô ở tờ trước thì sang tờ mới. Mỗi tờ có `data-sheet-page` (dùng khi xuất ảnh). */
-export const SheetPages = memo(function SheetPages({ texts, images, activeN, onCellClick, onFit }: Props) {
+export const SheetPages = memo(function SheetPages({
+  texts,
+  images,
+  activeN = null,
+  onCellClick,
+  onFit,
+  layout = 'pages',
+}: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const onFitRef = useRef(onFit)
   useEffect(() => {
@@ -105,15 +117,35 @@ export const SheetPages = memo(function SheetPages({ texts, images, activeN, onC
         cell.setAttribute('data-overflow', '')
       }
     })
-    onFitRef.current({ sizes, overflow, textCount, pageCount })
-  }, [cells, fontsVersion, textCount, pageCount])
+    onFitRef.current?.({ sizes, overflow, textCount, pageCount })
+  }, [cells, fontsVersion, textCount, pageCount, layout])
+
+  if (layout === 'cards') {
+    return (
+      <div ref={rootRef} className={s.cards} style={SHEET_VARS}>
+        {cells.map((item) =>
+          item.kind === 'text' ? (
+            <div key={`t${item.n}`} className={s.cell} data-n={item.n}>
+              <pre className={s.text}>
+                <EmojiText text={item.text} emojiClassName={s.emoji} />
+              </pre>
+            </div>
+          ) : (
+            <div key={`i${item.img.id}`} className={s.cell}>
+              <ImageCell img={item.img} />
+            </div>
+          ),
+        )}
+      </div>
+    )
+  }
 
   return (
     <div
       ref={rootRef}
       onClick={(e) => {
         const cell = (e.target as HTMLElement).closest<HTMLElement>('[data-n]')
-        if (cell) onCellClick(Number(cell.dataset.n))
+        if (cell) onCellClick?.(Number(cell.dataset.n))
       }}
     >
       {Array.from({ length: pageCount }, (_, p) => {

@@ -24,6 +24,8 @@ export interface ToShip {
   grand: number
   remaining: number
   paidAt: Date | null
+  /** Lúc in mã vận chuyển; null = chưa in */
+  printedAt: Date | null
 }
 
 const quoteDay = (q: QuoteDoc) => isoToDate(q.date)
@@ -123,6 +125,7 @@ export function toShipList(quotes: QuoteDoc[], orders: OrderDoc[]): ToShip[] {
         grand: it.totals.grand,
         remaining: paymentAmounts(it.totals.grand, it.status, it.paidPercent).remaining,
         paidAt: it.statusAt.paid ?? null,
+        printedAt: it.shipping.printedAt,
       })),
     ...orders
       .filter((it) => it.status === 'paid')
@@ -134,6 +137,7 @@ export function toShipList(quotes: QuoteDoc[], orders: OrderDoc[]): ToShip[] {
         grand: it.totals.grand,
         remaining: paymentAmounts(it.totals.grand, it.status, it.paidPercent).remaining,
         paidAt: it.statusAt.paid ?? null,
+        printedAt: it.shipping.printedAt,
       })),
   ]
   // Nhận tiền lâu nhất lên đầu

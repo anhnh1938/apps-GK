@@ -42,17 +42,19 @@ Mở https://console.firebase.google.com → project **my-apps-7797f**.
 
 ```
 unpaid (Chưa nhận tiền) ──► paid (Đã nhận tiền, paidPercent %) ──► shipped (Đã mang ra bưu cục)
+                        ◄──                                     ◄──   (lùi một bước khi bấm nhầm)
 ```
 
-- **Chỉ đi một chiều**, không quay lại (rules chặn). Đã nhận tiền / đã gửi vẫn sửa được `paidPercent`.
-- **Báo giá khoá từ `paid`**, **đơn áo khoá ở `shipped`**: không sửa nội dung, không xoá, không thêm/xoá ảnh. Khi khoá chỉ đổi được `status`, `paidPercent`, `statusAt`, `shipping`, `updatedAt`, `updatedBy`.
+- Đi tới từng bước; **lùi được đúng một bước** (`paid → unpaid`, `shipped → paid`), không nhảy cóc (rules `validStatusChange` chặn). Đã nhận tiền / đã gửi vẫn sửa được `paidPercent`.
+- Lùi `paid → unpaid`: `paidPercent = null`, xoá `statusAt.paid` / `statusAt.shipped`. Lùi `shipped → paid`: xoá `statusAt.shipped`, giữ `paidPercent` và `shipping`.
+- **Báo giá khoá từ `paid`**, **đơn áo khoá ở `shipped`**: không sửa nội dung, không xoá, không thêm/xoá ảnh. Khi khoá chỉ đổi được `status`, `paidPercent`, `statusAt`, `shipping`, `updatedAt`, `updatedBy`. Lùi trạng thái về trước bước khoá thì mở khoá lại.
 - Bản ghi mới luôn tạo ở `unpaid` và **chỉ được ghi khi bấm nút "Tạo"** trong form (`/bao-gia/moi`, `/don-ao/moi`).
 
 ## Cấu trúc dữ liệu
 
 ```
 gk_members/{email}                  người được dùng app (tạo tay trong Console / script)
-gk_products/{productId}             sản phẩm: mác áo (bảng giá theo số lượng) và áo (giá, màu, size) — chỉ admin ghi
+gk_products/{productId}             sản phẩm: mác áo (bảng giá theo số lượng, màu, kích thước) và áo (giá, màu, size) — chỉ admin ghi
 gk_quotes/{quoteId}                 báo giá mác áo rời (file mẫu câu tách từ printContent, không lưu riêng)
   └─ images/{imageId}               kind = "print" (ảnh nội dung in — cũng là ô ảnh trên tờ mẫu câu)
 gk_orders/{orderId}                 đơn áo
@@ -66,7 +68,7 @@ Field chung của `gk_quotes` và `gk_orders`:
 | `status` | string | `unpaid` · `paid` · `shipped` (dữ liệu cũ: `done` = `paid`) |
 | `paidPercent` | number \| null | % đã nhận (1–100) khi đã nhận tiền |
 | `statusAt` | map `{ unpaid?, paid?, shipped? }` | timestamp lúc chuyển sang từng trạng thái |
-| `shipping` | map `{ carrier, trackingCode, printedAt }` | đơn vị vận chuyển, mã vận đơn, lúc bấm "In mã vận chuyển" (null = chưa in) |
+| `shipping` | map `{ carrier, trackingCode, printedAt }` | từ "Đã nhận tiền" trở đi: đơn vị vận chuyển, mã vận đơn, lúc bấm "In mã vận chuyển" (null = chưa in) |
 | `totals` | map `{ qty, goods, grand }` | số lượng, tiền hàng, tổng (gồm ship) — tính sẵn khi lưu |
 | `createdAt`, `updatedAt` | timestamp | giờ server |
 | `createdBy`, `updatedBy` | string | email người tạo / sửa gần nhất |
@@ -86,19 +88,21 @@ Field chung của `gk_quotes` và `gk_orders`:
 | `name` | string | |
 | `active` | boolean | false = ẩn khi tạo báo giá / đơn mới |
 | `tiers` | array `{ min, price }` | **mác áo**: đặt từ `min` chiếc trở lên thì đơn giá `price` (null = thương lượng); bậc đầu `min = 1` |
+| `printKind` | string | **mác áo**: số lượng trên báo giá tự tính theo `text` = số câu, `image` = số ảnh của "Nội dung in". Thiếu field: `hinh` / tên có "hình" → `image`, còn lại `text` |
 | `price` | number \| null | **áo**: giá 1 áo |
-| `colors`, `sizes` | array string | **áo** |
+| `colors` | array `{ name, hex }` | cả hai loại (mác áo: màu tag; áo: màu áo). `hex` dạng `#rrggbb` cho chấm màu. Dữ liệu cũ dạng `["Đen", …]` app tự đổi (`toColors`) |
+| `sizes` | array string | cả hai loại (mác áo: kích thước, VD `4 × 6 cm gấp đôi`, `3 × 5 cm`; áo: `S`, `M`…) |
 | `spec`, `note` | string | mô tả, ghi chú |
-| `sortOrder` | number | thứ tự hiển thị |
+| `sortOrder` | number | thứ tự trong danh sách — không có ô sửa trên form; sản phẩm mới = `Date.now()` (xếp cuối) |
 
 ### `gk_quotes/{quoteId}` — báo giá mác áo rời
 
 | Field | Kiểu | Ghi chú |
 |---|---|---|
 | `customer` | map `{ name, phone, address }` | |
-| `date` | string `YYYY-MM-DD` | ngày báo giá (Dashboard / bộ lọc ngày dùng ngày này) |
-| `items` | array | `{ id, productId, name, color, size, qty, price, manual }` — `productId` = id sản phẩm mác áo hoặc `custom`; `manual` = giá nhập tay |
-| `products` | array `{ id, name, tiers }` | **bản chụp** bảng giá lúc tạo (đổi giá sản phẩm sau này không ảnh hưởng). Dữ liệu cũ dạng `prices: [5 giá]` app tự đổi |
+| `date` | string `YYYY-MM-DD` | ngày báo giá = ngày bấm "Tạo báo giá", không sửa được (Dashboard / bộ lọc ngày dùng ngày này) |
+| `items` | array | `{ id, productId, name, color, size, qty, price, manual }` — `productId` = id sản phẩm mác áo hoặc `custom`; `manual` = giá nhập tay. Dòng mác áo: `qty` app tự tính lúc lưu (tag in chữ = số câu của `printContent`, tag in hình = số ảnh `print`; mỗi cách tính một dòng), `manual = false`. Chỉ dòng `custom` nhập số lượng / đơn giá tay |
+| `products` | array `{ id, name, tiers, printKind, colors, sizes }` | **bản chụp** mác áo lúc tạo: bảng giá, màu tag, kích thước (đổi sản phẩm sau này không ảnh hưởng). Dữ liệu cũ dạng `prices: [5 giá]` / thiếu `colors`, `sizes` app tự đổi (màu Trắng / Be, 3 kích thước cũ) |
 | `ship` | number \| null | null = không tính ship, 0 = miễn phí |
 | `printContent` | string | danh sách câu cần in — nguồn duy nhất của file mẫu câu |
 | `title`, `subtitle`, `notes`, `font` | string | |

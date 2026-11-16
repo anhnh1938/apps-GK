@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Button, Card, Col, Empty, Row, Table, Tag, Typography } from 'antd'
-import { TableOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, TableOutlined } from '@ant-design/icons'
 import { Link } from 'react-router'
 import { DateRangeFilter, Stats, SubText } from '../../components/ListToolbar'
 import { PageShell } from '../../components/PageShell'
@@ -207,6 +207,18 @@ export default function DashboardPage() {
                     <SubText>{r.remaining > 0 ? `Còn ${fmtMoney(r.remaining)}` : 'Đã thu đủ'}</SubText>
                   </>
                 ),
+              },
+              {
+                title: 'Mã vận chuyển',
+                width: 140,
+                render: (_, r) =>
+                  r.printedAt ? (
+                    <Tag color="green" icon={<CheckCircleOutlined />}>
+                      Đã in
+                    </Tag>
+                  ) : (
+                    <Tag>Chưa in</Tag>
+                  ),
               },
               { title: 'Nhận tiền lúc', width: 150, render: (_, r) => fmtDateTime(r.paidAt) },
             ]}

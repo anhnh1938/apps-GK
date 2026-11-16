@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useMemo } from 'react'
 import type { CSSProperties, ReactNode, Ref } from 'react'
 import logo from '../../assets/logo.png'
 import { EmojiText } from '../../components/EmojiText'
@@ -6,6 +6,8 @@ import { PayBox } from '../../components/PayBox'
 import { fmtDate, fmtMoney, joinVi, pad2 } from '../../lib/format'
 import type { PayStatus } from '../../lib/payment'
 import { tierIndex, tierLabel } from '../products/catalog'
+import { SheetPages } from '../sentences/SheetPages'
+import { parseList } from '../sentences/state'
 import { itemName, shipText } from './calc'
 import type { QuoteCalc } from './calc'
 import { DEFAULT_FONT, FONTS } from './constants'
@@ -30,16 +32,17 @@ export function QuotePreview({ state, calc, payment, ref }: Props) {
   const printText = state.printContent.trim()
   const images = state.printImages
   const hasPrint = printText !== '' || images.length > 0
+  // Tách câu giống trang Mẫu câu; giữ tham chiếu khi nội dung không đổi (SheetPages đo lại cỡ chữ khi đổi)
+  const sentences = useMemo(() => parseList(state.printContent), [state.printContent])
+  const cellImages = useMemo(() => images.map((img) => ({ id: img.id, src: img.src, name: 'Ảnh nội dung in' })), [images])
 
   const tagLines = calc.lines.filter((l) => l.product)
-  const uniq = (arr: string[]) => [...new Set(arr)]
+  const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))]
+  const tagSizes = uniq(tagLines.map((l) => l.item.size))
+  const tagColors = uniq(tagLines.map((l) => l.item.color))
   const infoLines = [
-    ...(tagLines.length
-      ? [
-          `Kích thước tag: ${joinVi(uniq(tagLines.map((l) => l.item.size)))}.`,
-          `Màu tag: ${joinVi(uniq(tagLines.map((l) => l.item.color)))}.`,
-        ]
-      : []),
+    ...(tagSizes.length ? [`Kích thước tag: ${joinVi(tagSizes)}.`] : []),
+    ...(tagColors.length ? [`Màu tag: ${joinVi(tagColors)}.`] : []),
     ...state.notes
       .split('\n')
       .map((line) => line.trim())
@@ -83,9 +86,9 @@ export function QuotePreview({ state, calc, payment, ref }: Props) {
               <tr key={line.item.id}>
                 <td className={cx(s.td, s.left)}>
                   <div className={s.productName}>{rich(itemName(line))}</div>
-                  {line.product && (
+                  {line.product && (line.item.color || line.item.size) && (
                     <div className={s.productDetail}>
-                      Màu {line.item.color} · {line.item.size}
+                      {[line.item.color && `Màu ${line.item.color}`, line.item.size].filter(Boolean).join(' · ')}
                     </div>
                   )}
                 </td>
@@ -120,23 +123,12 @@ export function QuotePreview({ state, calc, payment, ref }: Props) {
     </section>
   )
 
+  // Nội dung in = các ô mẫu câu (mỗi câu / mỗi ảnh một ô, cỡ thật 4 × 3 cm, chữ tự co như trang Mẫu câu)
   const printContent = hasPrint && (
     <section className={s.sectionFlow}>
       {sectionTitle(noPrint, 'Nội dung in')}
       <div className={s.printBox}>
-        {printText && <div className={s.printText}>{rich(printText)}</div>}
-        {images.length > 0 && (
-          <div className={s.printImages}>
-            {images.map((pic) => (
-              <img
-                key={pic.id}
-                src={pic.src}
-                alt="Nội dung in"
-                className={images.length === 1 ? s.imgSingle : s.imgMulti}
-              />
-            ))}
-          </div>
-        )}
+        <SheetPages texts={sentences} images={cellImages} layout="cards" />
       </div>
     </section>
   )

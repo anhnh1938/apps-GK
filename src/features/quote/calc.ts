@@ -1,8 +1,37 @@
 import { fmtMoney } from '../../lib/format'
 import { tierIndex, tierLabel } from '../products/catalog'
+import type { PrintKind } from '../products/types'
+import { parseList } from '../sentences/state'
 import type { Product, QuoteContent, QuoteItem } from './types'
 
 export const productOf = (products: Product[], it: QuoteItem) => products.find((p) => p.id === it.productId)
+
+/** Số tag theo "Nội dung in": số câu (cùng cách tách với trang Mẫu câu) và số ảnh */
+export const printCounts = (printContent: string, imageCount: number): Record<PrintKind, number> => ({
+  text: parseList(printContent).length,
+  image: imageCount,
+})
+
+/**
+ * Số lượng dòng mác áo tự tính từ "Nội dung in": tag in chữ = số câu, tag in hình = số ảnh; đơn giá theo bảng giá.
+ * Mỗi loại chỉ tính ở dòng đầu tiên của loại đó (dòng trùng loại = 0). Dòng "Sản phẩm khác" giữ số nhập tay.
+ * Không có gì đổi → trả lại đúng object cũ (để tự lưu không ghi thừa).
+ */
+export function withAutoQty<T extends Pick<QuoteContent, 'items' | 'products' | 'printContent'>>(content: T, imageCount: number): T {
+  const counts = printCounts(content.printContent, imageCount)
+  const used = new Set<PrintKind>()
+  let changed = false
+  const items = content.items.map((it) => {
+    const p = productOf(content.products, it)
+    if (!p) return it
+    const qty = used.has(p.printKind) ? 0 : counts[p.printKind]
+    used.add(p.printKind)
+    if (it.qty === qty && !it.manual) return it
+    changed = true
+    return { ...it, qty, manual: false }
+  })
+  return changed ? { ...content, items } : content
+}
 
 export interface PricedLine {
   item: QuoteItem

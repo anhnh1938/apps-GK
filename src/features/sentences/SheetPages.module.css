@@ -25,6 +25,18 @@
   margin-top: 24px;
 }
 
+/* Kiểu "cards" (xem trước báo giá): chỉ các ô có nội dung, cỡ thật, có khe giữa các ô */
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--card-font);
+  -webkit-font-smoothing: antialiased;
+}
+.cards .cell {
+  background-color: #fff;
+}
+
 .cell {
   /* Nét đứt tự vẽ (4 gradient) để chỉnh được độ dài nét và khoảng cách — border: dashed không làm được */
   --line: 1px;
@@ -125,6 +137,16 @@
     outline: 2px solid #5b4335;
     outline-offset: -2px;
     background-color: #faf6f0;
+  }
+  /* Xem trước báo giá: không bấm sửa, không số thứ tự / viền đỏ (bản báo giá gửi khách) */
+  .cards .cell[data-n] {
+    cursor: default;
+  }
+  .cards .cell[data-n]::before {
+    display: none;
+  }
+  .cards .cell[data-overflow] {
+    outline: none;
   }
 }
 

@@ -1,5 +1,26 @@
 import { useMemo, useState } from 'react'
-import { Alert, App, Button, Card, Col, Flex, Form, Input, InputNumber, Popconfirm, Radio, Result, Row, Select, Spin, Switch, Table, Typography } from 'antd'
+import {
+  Alert,
+  App,
+  AutoComplete,
+  Button,
+  Card,
+  Col,
+  ColorPicker,
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Popconfirm,
+  Radio,
+  Result,
+  Row,
+  Spin,
+  Switch,
+  Table,
+  Typography,
+} from 'antd'
+import type { FormInstance } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useAuth } from '../../auth/context'
@@ -8,9 +29,19 @@ import { PageShell } from '../../components/PageShell'
 import { firestoreErrorText, useDocOnce } from '../../lib/firestoreHooks'
 import { fmtMoney } from '../../lib/format'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
-import { PRODUCT_TYPES, sortTiers, tierLabel } from './catalog'
+import {
+  DEFAULT_TAG_COLORS,
+  DEFAULT_TAG_SIZES,
+  KNOWN_COLORS,
+  PRINT_KINDS,
+  PRODUCT_TYPES,
+  cleanColors,
+  cleanSizes,
+  sortTiers,
+  tierLabel,
+} from './catalog'
 import { createProduct, deleteProduct, productRef, saveProduct, toProduct } from './repo'
-import type { PriceTier, ProductContent, ProductDoc, ProductType } from './types'
+import type { PriceTier, ProductColor, ProductContent, ProductDoc, ProductType } from './types'
 
 const { Text } = Typography
 
@@ -26,11 +57,13 @@ const blank = (type: ProductType): ProductContent => ({
     { min: 50, price: null },
     { min: 100, price: null },
   ],
+  printKind: 'text',
   price: null,
   colors: [],
   sizes: [],
   spec: '',
-  sortOrder: 10,
+  // Không sửa trên form — createProduct tự xếp sản phẩm mới về cuối
+  sortOrder: 0,
 })
 
 /** /san-pham/moi, /san-pham/:id — form sản phẩm, lưu khi bấm nút (không tự lưu: giá là thứ quan trọng) */
@@ -76,6 +109,13 @@ function validateTiers(list: PriceTier[] | undefined) {
   return Promise.resolve()
 }
 
+/** Danh sách màu / size: không được trùng tên */
+function validateUnique(names: string[], what: string) {
+  const list = names.map((n) => n.trim()).filter(Boolean)
+  const dup = list.find((n, i) => list.indexOf(n) !== i)
+  return dup ? Promise.reject(new Error(`${what} “${dup}” bị trùng`)) : Promise.resolve()
+}
+
 function ProductEditor({ product, initial }: { product: ProductDoc | null; initial: ProductContent }) {
   const isNew = product == null
   const { message } = App.useApp()
@@ -87,11 +127,13 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
   const type = Form.useWatch('type', form) ?? initial.type
   const tiers = (Form.useWatch('tiers', form) ?? initial.tiers) as PriceTier[]
   const name = Form.useWatch('name', form) ?? initial.name
+  const printKind = Form.useWatch('printKind', form) ?? initial.printKind
   useDocumentTitle(name ? `Sản phẩm · ${name}` : 'Sản phẩm mới')
 
   const submit = async () => {
     let values: ProductContent
     try {
+      // sortOrder không có trên form → giữ giá trị cũ từ `initial`
       values = { ...initial, ...(await form.validateFields()) }
     } catch {
       return
@@ -101,7 +143,11 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
       if (product) {
         await saveProduct(product.id, values)
         message.success('Đã lưu sản phẩm')
-        form.setFieldsValue({ tiers: sortTiers(values.tiers ?? []) })
+        form.setFieldsValue({
+          tiers: sortTiers(values.tiers ?? []),
+          colors: cleanColors(values.colors ?? []),
+          sizes: cleanSizes(values.sizes ?? []),
+        })
       } else {
         await createProduct(values)
         message.success('Đã tạo sản phẩm')
@@ -115,6 +161,7 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
   }
 
   const sortedTiers = sortTiers((tiers ?? []).filter((t) => t && t.min > 0))
+  const isTag = type === 'tag'
 
   return (
     <PageShell
@@ -174,17 +221,12 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
                   />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={6}>
+              <Col xs={24} md={6}>
                 <Form.Item name="active" label="Đang bán" valuePropName="checked">
                   <Switch />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={6}>
-                <Form.Item name="sortOrder" label="Thứ tự hiển thị">
-                  <InputNumber min={0} precision={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={12}>
+              <Col xs={24} md={18}>
                 <Form.Item name="note" label="Ghi chú">
                   <Input placeholder="VD: Giá đã gồm tối đa 2 tag" />
                 </Form.Item>
@@ -192,8 +234,19 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
             </Row>
           </Card>
 
-          {type === 'tag' ? (
+          {isTag ? (
             <Card title="Bảng giá theo số lượng đặt">
+              <Form.Item
+                name="printKind"
+                label="Số lượng trên báo giá tự tính theo"
+                extra={PRINT_KINDS.find((k) => k.value === printKind)?.help}
+              >
+                <Radio.Group
+                  optionType="button"
+                  buttonStyle="solid"
+                  options={PRINT_KINDS.map((k) => ({ value: k.value, label: `${k.label} ở Nội dung in` }))}
+                />
+              </Form.Item>
               <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
                 Đơn giá áp dụng theo <b>tổng số lượng</b> của loại tag này trong một báo giá. Mỗi bậc: đặt từ N chiếc trở
                 lên (tới bậc kế tiếp). Để trống đơn giá = “Thương lượng”.
@@ -257,7 +310,7 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
               />
             </Card>
           ) : (
-            <Card title="Giá, màu & size">
+            <Card title="Giá & mô tả">
               <Row gutter={16}>
                 <Col xs={24} md={10}>
                   <Form.Item name="price" label="Giá 1 áo" rules={[{ required: true, message: 'Nhập giá áo' }]}>
@@ -269,21 +322,150 @@ function ProductEditor({ product, initial }: { product: ProductDoc | null; initi
                     <Input placeholder="VD: Cotton 100% · 250 gsm · cổ tròn" />
                   </Form.Item>
                 </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item name="colors" label="Màu" extra="Gõ tên màu rồi Enter">
-                    <Select mode="tags" placeholder="VD: Đen, Trắng, Xanh than" open={false} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item name="sizes" label="Size" extra="Gõ size rồi Enter">
-                    <Select mode="tags" placeholder="VD: S, M, L, XL" open={false} />
-                  </Form.Item>
-                </Col>
               </Row>
             </Card>
           )}
+
+          <Card title={isTag ? 'Màu tag & kích thước' : 'Màu áo & size'} style={{ marginTop: 20 }}>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+              {isTag ? 'Các lựa chọn hiện khi chọn loại tag này trong báo giá.' : 'Các lựa chọn hiện khi chọn loại áo này trong đơn áo.'}{' '}
+              Lựa chọn đầu tiên là mặc định.
+            </Text>
+            <Row gutter={[32, 16]}>
+              <Col xs={24} md={13}>
+                <ColorList form={form} label={isTag ? 'Màu tag' : 'Màu áo'} defaults={isTag ? DEFAULT_TAG_COLORS : undefined} />
+              </Col>
+              <Col xs={24} md={11}>
+                <SizeList
+                  label={isTag ? 'Kích thước' : 'Size'}
+                  placeholder={isTag ? 'VD: 4 × 6 cm gấp đôi' : 'VD: M'}
+                  defaults={isTag ? DEFAULT_TAG_SIZES : undefined}
+                />
+              </Col>
+            </Row>
+          </Card>
         </Form>
       </div>
     </PageShell>
+  )
+}
+
+const listLabel = { display: 'block', marginBottom: 8, fontWeight: 600 } as const
+const swatchStyle = {
+  display: 'inline-block',
+  width: 14,
+  height: 14,
+  borderRadius: '50%',
+  border: '1px solid rgba(0, 0, 0, 0.2)',
+  flex: 'none',
+} as const
+const COLOR_PRESETS = [{ label: 'Màu hay dùng', colors: Object.values(KNOWN_COLORS) }]
+
+/** Màu: mỗi dòng = ô màu (bấm để chọn mã màu) + tên màu. Chọn tên màu quen thuộc thì tự điền mã màu. */
+function ColorList({ form, label, defaults }: { form: FormInstance<ProductContent>; label: string; defaults?: ProductColor[] }) {
+  const colors = (Form.useWatch('colors', form) ?? []) as (Partial<ProductColor> | undefined)[]
+  const used = new Set(colors.map((c) => c?.name?.trim()).filter(Boolean))
+  return (
+    <Form.List
+      name="colors"
+      rules={[{ validator: (_, v: (Partial<ProductColor> | undefined)[] = []) => validateUnique(v.map((c) => c?.name ?? ''), 'Màu') }]}
+    >
+      {(fields, { add, remove }, { errors }) => (
+        <>
+          <Text style={listLabel}>{label}</Text>
+          {fields.length === 0 && (
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              Chưa có màu nào.
+              {defaults && (
+                <Button type="link" size="small" onClick={() => defaults.forEach((c) => add({ ...c }))}>
+                  Điền mặc định: {defaults.map((c) => c.name).join(', ')}
+                </Button>
+              )}
+            </Text>
+          )}
+          {fields.map((field, i) => {
+            const typed = colors[field.name]?.name?.trim().toLowerCase() ?? ''
+            const options = Object.keys(KNOWN_COLORS)
+              .filter((n) => !used.has(n) && n.toLowerCase().includes(typed))
+              .map((n) => ({
+                value: n,
+                label: (
+                  <Flex align="center" gap={8}>
+                    <span style={{ ...swatchStyle, background: KNOWN_COLORS[n] }} />
+                    {n}
+                  </Flex>
+                ),
+              }))
+            return (
+              <Flex key={field.key} gap={8} align="flex-start">
+                <Form.Item
+                  name={[field.name, 'hex']}
+                  getValueFromEvent={(c: { toHexString: () => string }) => c.toHexString()}
+                  style={{ marginBottom: 8 }}
+                >
+                  <ColorPicker disabledAlpha presets={COLOR_PRESETS} />
+                </Form.Item>
+                <Form.Item
+                  name={[field.name, 'name']}
+                  rules={[{ required: true, whitespace: true, message: 'Nhập tên màu' }]}
+                  style={{ flex: 1, marginBottom: 8 }}
+                >
+                  <AutoComplete
+                    options={options}
+                    placeholder="Tên màu, VD: Đen"
+                    onSelect={(v: string) => form.setFieldValue(['colors', field.name, 'hex'], KNOWN_COLORS[v])}
+                  />
+                </Form.Item>
+                <Button type="text" danger icon={<DeleteOutlined />} aria-label={`Xoá màu ${i + 1}`} onClick={() => remove(field.name)} />
+              </Flex>
+            )
+          })}
+          <Form.ErrorList errors={errors} />
+          <Button icon={<PlusOutlined />} onClick={() => add({ name: '', hex: '#cccccc' })} style={{ marginTop: 4 }}>
+            Thêm màu
+          </Button>
+        </>
+      )}
+    </Form.List>
+  )
+}
+
+/** Size / kích thước: mỗi dòng một giá trị */
+function SizeList({ label, placeholder, defaults }: { label: string; placeholder: string; defaults?: string[] }) {
+  const what = label.toLowerCase()
+  return (
+    <Form.List name="sizes" rules={[{ validator: (_, v: (string | undefined)[] = []) => validateUnique(v.map((x) => x ?? ''), label) }]}>
+      {(fields, { add, remove }, { errors }) => (
+        <>
+          <Text style={listLabel}>{label}</Text>
+          {fields.length === 0 && (
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              Chưa có {what} nào.
+              {defaults && (
+                <Button type="link" size="small" onClick={() => defaults.forEach((v) => add(v))}>
+                  Điền mặc định: {defaults.join(' · ')}
+                </Button>
+              )}
+            </Text>
+          )}
+          {fields.map((field, i) => (
+            <Flex key={field.key} gap={8} align="flex-start">
+              <Form.Item
+                name={field.name}
+                rules={[{ required: true, whitespace: true, message: `Nhập ${what}` }]}
+                style={{ flex: 1, marginBottom: 8 }}
+              >
+                <Input placeholder={placeholder} />
+              </Form.Item>
+              <Button type="text" danger icon={<DeleteOutlined />} aria-label={`Xoá ${what} ${i + 1}`} onClick={() => remove(field.name)} />
+            </Flex>
+          ))}
+          <Form.ErrorList errors={errors} />
+          <Button icon={<PlusOutlined />} onClick={() => add('')} style={{ marginTop: 4 }}>
+            Thêm {what}
+          </Button>
+        </>
+      )}
+    </Form.List>
   )
 }

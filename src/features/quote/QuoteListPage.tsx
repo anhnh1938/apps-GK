@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router'
 import { ListFilters, Stats, SubText } from '../../components/ListToolbar'
 import { PageShell } from '../../components/PageShell'
 import { PaymentStatusCompact } from '../../components/PaymentStatus'
+import type { PaymentActions } from '../../components/PaymentStatus'
 import { firestoreErrorText, useLiveQuery } from '../../lib/firestoreHooks'
 import { fmtDate, fmtDateTime, fmtMoney, inDateRange, isoToDate, matchText, todayRange } from '../../lib/format'
 import type { DateRange } from '../../lib/format'
@@ -13,7 +14,17 @@ import { PAY_STATUSES, paymentAmounts } from '../../lib/payment'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { parseList } from '../sentences/state'
 import { quoteItemsSummary } from './calc'
-import { deleteQuote, quotesQuery, setQuoteStatus, toQuote } from './repo'
+import { QUOTE_PAYMENT_NOTES } from './constants'
+import {
+  deleteQuote,
+  markQuotePaid,
+  markQuoteShipped,
+  quotesQuery,
+  revertQuoteToPaid,
+  revertQuoteToUnpaid,
+  setQuotePaidPercent,
+  toQuote,
+} from './repo'
 import type { QuoteDoc, QuoteStatus } from './types'
 
 const sum = (list: QuoteDoc[], f: (q: QuoteDoc) => number) => list.reduce((s, q) => s + f(q), 0)
@@ -44,9 +55,19 @@ export default function QuoteListPage() {
   const counts = scope.reduce<Record<string, number>>((acc, it) => ({ ...acc, [it.status]: (acc[it.status] ?? 0) + 1 }), {})
   const rows = scope.filter((it) => filter === 'all' || it.status === filter)
 
-  // Trạng thái chỉ đi một chiều; chuyển sang "Đã nhận tiền" thì báo giá bị khoá
-  const changeStatus = (r: QuoteDoc, next: { status: QuoteStatus; paidPercent: number | null }) =>
-    setQuoteStatus(r.id, next.status, next.paidPercent).catch((err) => message.error(firestoreErrorText(err)))
+  // Trạng thái đi tới từng bước, lùi lại được một bước; "Đã nhận tiền" thì báo giá bị khoá.
+  // Lỗi: báo rồi ném lại để hộp thoại không đóng.
+  const fail = (err: unknown): never => {
+    message.error(firestoreErrorText(err))
+    throw err
+  }
+  const actionsFor = (r: QuoteDoc): PaymentActions => ({
+    paid: (percent) => markQuotePaid(r.id, percent).catch(fail),
+    percent: (percent) => setQuotePaidPercent(r.id, percent).catch(fail),
+    shipped: () => markQuoteShipped(r.id).catch(fail),
+    backToUnpaid: () => revertQuoteToUnpaid(r.id).catch(fail),
+    backToPaid: () => revertQuoteToPaid(r.id).catch(fail),
+  })
 
   const columns: TableColumnsType<QuoteDoc> = [
     {
@@ -94,10 +115,10 @@ export default function QuoteListPage() {
         <PaymentStatusCompact
           value={{ status: r.status, paidPercent: r.paidPercent }}
           grand={r.totals.grand}
-          onChange={(v) => changeStatus(r, v)}
-          paidNote="Sau khi nhận tiền, báo giá sẽ bị khoá: không sửa, không xoá được nữa. Không chuyển ngược lại được."
+          actions={actionsFor(r)}
+          notes={QUOTE_PAYMENT_NOTES}
           extra={
-            r.status === 'shipped' &&
+            r.status !== 'unpaid' &&
             (r.shipping.printedAt ? (
               <Tag color="green" icon={<CheckCircleOutlined />}>
                 Đã in mã

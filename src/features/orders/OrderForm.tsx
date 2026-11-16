@@ -7,8 +7,8 @@ import { ImageDropzone, ImageThumbs, SectionCard } from '../../components/Sectio
 import { fmtMoney } from '../../lib/format'
 import type { StoredImage } from '../../lib/images'
 import s from '../../components/Form.module.css'
+import { colorOf, withCurrent } from '../products/catalog'
 import type { ProductDoc } from '../products/types'
-import { SWATCH } from './constants'
 import { newOrderItem } from './state'
 import type { OrderContent, OrderItem, OrderTotals } from './types'
 
@@ -187,8 +187,9 @@ function ItemsSection({ content, setContent, shirts }: { content: OrderContent; 
             ...shirts.map((p) => ({ value: p.id, label: `${p.name} · ${p.price == null ? '—' : fmtMoney(p.price)}` })),
             ...(product ? [] : [{ value: it.productId, label: `${it.name} (ngừng bán)`, disabled: true }]),
           ]
-          const colors = product?.colors.length ? product.colors : [it.color].filter(Boolean)
-          const sizes = product?.sizes.length ? product.sizes : [it.size].filter(Boolean)
+          // Màu / size của sản phẩm; lựa chọn cũ của đơn không còn trong sản phẩm thì vẫn hiện thêm
+          const colors = withCurrent(product?.colors ?? [], it.color && colorOf(it.color), (c) => c.name)
+          const sizes = withCurrent(product?.sizes ?? [], it.size, (v) => v)
           const total = it.price == null ? null : it.price * it.qty
           return (
             <div key={it.id} className={s.item}>
@@ -226,11 +227,11 @@ function ItemsSection({ content, setContent, shirts }: { content: OrderContent; 
                     value={it.color}
                     onChange={(e) => patchItem(it.id, { color: e.target.value })}
                     options={colors.map((c) => ({
-                      value: c,
+                      value: c.name,
                       label: (
                         <>
-                          <span className={s.swatch} style={{ background: SWATCH[c] ?? '#ccc' }} />
-                          {c}
+                          <span className={s.swatch} style={{ background: c.hex }} />
+                          {c.name}
                         </>
                       ),
                     }))}

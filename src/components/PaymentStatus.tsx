@@ -1,16 +1,44 @@
 import { useState } from 'react'
-import { App, Button, Flex, InputNumber, Modal, Segmented, Steps, Tag, Typography } from 'antd'
-import { CarOutlined, CheckOutlined, DollarOutlined, EditOutlined } from '@ant-design/icons'
+import type { ReactNode } from 'react'
+import { Alert, App, Button, Flex, InputNumber, Modal, Segmented, Steps, Tag, Typography } from 'antd'
+import { CarOutlined, CheckOutlined, DollarOutlined, EditOutlined, RollbackOutlined } from '@ant-design/icons'
 import { fmtDateTime, fmtMoney } from '../lib/format'
-import { PERCENT_PRESETS, paymentAmounts, percentOf, statusColor, statusText } from '../lib/payment'
+import { PAY_STATUSES, PERCENT_PRESETS, PREV_STATUS, paymentAmounts, percentOf, statusColor, statusText } from '../lib/payment'
 import type { PayStatus } from '../lib/payment'
 import { SectionCard } from './SectionCard'
 
 const { Text } = Typography
 
+const statusLabel = (s: PayStatus) => PAY_STATUSES.find((x) => x.value === s)?.label ?? s
+
 export interface PaymentValue {
   status: PayStatus
   paidPercent: number | null
+}
+
+/**
+ * Các thao tác trạng thái — mỗi cái một lệnh ghi riêng (xem lib/statusFields.ts).
+ * Hàm tự báo lỗi cho người dùng rồi ném lỗi lại (để hộp thoại không đóng khi ghi hỏng).
+ */
+export interface PaymentActions {
+  /** Chưa nhận tiền → Đã nhận tiền, kèm % đã nhận */
+  paid: (percent: number) => Promise<void>
+  /** Sửa % đã nhận — giữ nguyên trạng thái và các mốc giờ */
+  percent: (percent: number) => Promise<void>
+  /** Đã nhận tiền → Đã mang ra bưu cục */
+  shipped: () => Promise<void>
+  /** Lùi: Đã nhận tiền → Chưa nhận tiền (bỏ % đã nhận) */
+  backToUnpaid: () => Promise<void>
+  /** Lùi: Đã mang ra bưu cục → Đã nhận tiền (giữ %) */
+  backToPaid: () => Promise<void>
+}
+
+/** Ghi chú hiện trong hộp xác nhận (VD báo giá sẽ bị khoá / mở khoá) */
+export interface PaymentNotes {
+  paid?: string
+  shipped?: string
+  backToUnpaid?: string
+  backToPaid?: string
 }
 
 export function PaymentTag({ status, paidPercent }: PaymentValue) {
@@ -21,17 +49,21 @@ export function PaymentTag({ status, paidPercent }: PaymentValue) {
   )
 }
 
-/** Hộp hỏi đã nhận bao nhiêu % (30 / 50 / 100 / tự nhập), hiện số tiền tương ứng */
+/** Hộp chọn % (30 / 50 / 100 / tự nhập) — dùng cho "Xác nhận đã nhận tiền" và "Sửa % đã nhận" */
 function PercentModal({
-  open,
+  mode,
   initial,
   grand,
+  note,
+  busy,
   onCancel,
   onOk,
 }: {
-  open: boolean
+  mode: 'paid' | 'percent'
   initial: number
   grand: number
+  note?: string
+  busy: boolean
   onCancel: () => void
   onOk: (percent: number) => void
 }) {
@@ -40,16 +72,18 @@ function PercentModal({
   const { received, remaining } = paymentAmounts(grand, 'paid', percent)
   return (
     <Modal
-      open={open}
-      title="Đã nhận bao nhiêu % tiền?"
-      okText="Lưu"
+      open
+      title={mode === 'paid' ? 'Xác nhận đã nhận tiền' : 'Sửa % đã nhận'}
+      okText={mode === 'paid' ? `Xác nhận đã nhận ${percent ?? '…'}%` : 'Lưu'}
       cancelText="Huỷ"
       okButtonProps={{ disabled: !percent }}
+      confirmLoading={busy}
       onCancel={onCancel}
       onOk={() => percent && onOk(percent)}
-      width={420}
+      width={440}
     >
       <Flex vertical gap={12}>
+        <Text>Đã nhận bao nhiêu % tổng tiền?</Text>
         <Segmented<number | 'other'>
           block
           value={isPreset ? (percent as number) : 'other'}
@@ -71,55 +105,75 @@ function PercentModal({
             Đã nhận <b>{fmtMoney(received)}</b> trên tổng {fmtMoney(grand)} · Còn lại <b>{fmtMoney(remaining)}</b>
           </Text>
         ) : null}
+        {note && <Alert type="warning" showIcon title={note} />}
       </Flex>
     </Modal>
   )
 }
 
-/**
- * Các thao tác đổi trạng thái — chỉ đi một chiều:
- * Chưa nhận tiền → (hỏi %) Đã nhận tiền → (xác nhận) Đã mang ra bưu cục. Đã nhận tiền thì sửa được %.
- */
-function usePaymentActions(
-  value: PaymentValue,
-  onChange: (next: PaymentValue) => void,
-  confirmNotes: { paid?: string; shipped?: string },
-) {
+/** Trạng thái hộp thoại + đang ghi; mỗi thao tác chỉ một hộp thoại, nút khoá trong lúc ghi */
+function usePaymentFlow(value: PaymentValue, grand: number, actions: PaymentActions, notes: PaymentNotes) {
   const { modal } = App.useApp()
-  const [asking, setAsking] = useState(false)
-  const percentModal = (grand: number) =>
-    asking && (
-      <PercentModal
-        open
-        initial={value.status === 'unpaid' ? 100 : percentOf(value.status, value.paidPercent)}
-        grand={grand}
-        onCancel={() => setAsking(false)}
-        onOk={(percent) => {
-          setAsking(false)
-          if (value.status === 'unpaid' && confirmNotes.paid) {
-            modal.confirm({
-              title: `Xác nhận đã nhận ${percent}% tiền?`,
-              content: confirmNotes.paid,
-              okText: 'Xác nhận',
-              cancelText: 'Huỷ',
-              onOk: () => onChange({ status: 'paid', paidPercent: percent }),
-            })
-          } else {
-            // Sửa % giữ nguyên trạng thái hiện tại (đã nhận tiền / đã mang ra bưu cục)
-            onChange({ status: value.status === 'unpaid' ? 'paid' : value.status, paidPercent: percent })
-          }
-        }}
-      />
-    )
+  const [dialog, setDialog] = useState<'paid' | 'percent' | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await fn()
+      setDialog(null)
+    } catch {
+      // Hàm thao tác đã báo lỗi; giữ hộp thoại để thử lại
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const ship = () =>
     modal.confirm({
       title: 'Xác nhận đã mang ra bưu cục?',
-      content: confirmNotes.shipped ?? 'Không chuyển ngược lại được. Sau bước này có thể nhập mã vận đơn và in mã vận chuyển.',
+      content: notes.shipped ?? 'Nhớ in mã vận chuyển dán lên gói trước khi gửi.',
       okText: 'Đã mang ra bưu cục',
       cancelText: 'Huỷ',
-      onOk: () => onChange({ status: 'shipped', paidPercent: value.paidPercent ?? 100 }),
+      // Trả promise → nút OK tự hiện đang xử lý. Ghi lỗi: hàm thao tác đã báo + trả lại trạng thái cũ, đóng hộp thoại
+      onOk: () => actions.shipped().catch(() => undefined),
     })
-  return { askPercent: () => setAsking(true), ship, percentModal }
+
+  // Lùi một bước (bấm nhầm)
+  const back = () => {
+    const toUnpaid = value.status === 'paid'
+    const note = toUnpaid ? notes.backToUnpaid : notes.backToPaid
+    modal.confirm({
+      title: toUnpaid ? 'Chuyển về “Chưa nhận tiền”?' : 'Chuyển về “Đã nhận tiền”?',
+      content: (
+        <Flex vertical gap={6}>
+          <span>
+            {toUnpaid
+              ? `Bỏ ${percentOf(value.status, value.paidPercent)}% đã nhận và mốc giờ nhận tiền.`
+              : 'Bỏ mốc giờ mang ra bưu cục. Giữ nguyên % đã nhận và mã vận chuyển.'}
+          </span>
+          {note && <span>{note}</span>}
+        </Flex>
+      ),
+      okText: 'Chuyển về',
+      cancelText: 'Huỷ',
+      onOk: () => (toUnpaid ? actions.backToUnpaid() : actions.backToPaid()).catch(() => undefined),
+    })
+  }
+
+  const dialogNode = dialog && (
+    <PercentModal
+      mode={dialog}
+      initial={value.status === 'unpaid' ? 100 : percentOf(value.status, value.paidPercent)}
+      grand={grand}
+      note={dialog === 'paid' ? notes.paid : undefined}
+      busy={busy}
+      onCancel={() => !busy && setDialog(null)}
+      onOk={(p) => void run(() => (dialog === 'paid' ? actions.paid(p) : actions.percent(p)))}
+    />
+  )
+
+  return { askPaid: () => setDialog('paid'), askPercent: () => setDialog('percent'), ship, back, busy, dialogNode }
 }
 
 const STEP_INDEX: Record<PayStatus, number> = { unpaid: 0, paid: 1, shipped: 2 }
@@ -127,21 +181,19 @@ const STEP_INDEX: Record<PayStatus, number> = { unpaid: 0, paid: 1, shipped: 2 }
 /** Thẻ "Trạng thái" trong trang sửa: 3 bước + đúng 1 nút chính cho bước kế tiếp */
 export function PaymentStatusCard({
   value,
-  onChange,
   grand,
+  actions,
+  notes = {},
   statusAt,
-  paidNote,
 }: {
   value: PaymentValue
-  onChange: (next: PaymentValue) => void
   grand: number
+  actions: PaymentActions
+  notes?: PaymentNotes
   statusAt?: Partial<Record<PayStatus, Date | null>>
-  /** Nhắc thêm khi xác nhận đã nhận tiền (VD báo giá sẽ bị khoá) */
-  paidNote?: string
 }) {
-  const { askPercent, ship, percentModal } = usePaymentActions(value, onChange, {
-    paid: paidNote ?? 'Không chuyển ngược về “Chưa nhận tiền” được.',
-  })
+  const flow = usePaymentFlow(value, grand, actions, notes)
+  const prev = PREV_STATUS[value.status]
   const { percent, received, remaining } = paymentAmounts(grand, value.status, value.paidPercent)
   const at = (s: PayStatus) => (statusAt?.[s] ? fmtDateTime(statusAt[s] ?? null) : undefined)
 
@@ -150,12 +202,11 @@ export function PaymentStatusCard({
       <Steps
         size="small"
         current={STEP_INDEX[value.status]}
+        // Bước cuối (đã mang ra bưu cục) là đã xong, không phải "đang làm"
+        status={value.status === 'shipped' ? 'finish' : 'process'}
         items={[
           { title: 'Chưa nhận tiền', description: at('unpaid') },
-          {
-            title: value.status === 'unpaid' ? 'Đã nhận tiền' : `Đã nhận ${percent}%`,
-            description: at('paid'),
-          },
+          { title: value.status === 'unpaid' ? 'Đã nhận tiền' : `Đã nhận ${percent}%`, description: at('paid') },
           { title: 'Đã mang ra bưu cục', description: at('shipped') },
         ]}
       />
@@ -174,25 +225,27 @@ export function PaymentStatusCard({
       )}
       <Flex wrap gap={8} align="center" style={{ marginTop: 16 }}>
         {value.status === 'unpaid' && (
-          <Button type="primary" icon={<CheckOutlined />} onClick={askPercent}>
+          <Button type="primary" icon={<CheckOutlined />} loading={flow.busy} onClick={flow.askPaid}>
             Xác nhận đã nhận tiền
           </Button>
         )}
         {value.status === 'paid' && (
-          <Button type="primary" icon={<CarOutlined />} onClick={ship}>
+          <Button type="primary" icon={<CarOutlined />} disabled={flow.busy} onClick={flow.ship}>
             Đã mang ra bưu cục
           </Button>
         )}
         {value.status !== 'unpaid' && (
-          <Button icon={<EditOutlined />} onClick={askPercent}>
+          <Button icon={<EditOutlined />} disabled={flow.busy} onClick={flow.askPercent}>
             Sửa % đã nhận
           </Button>
         )}
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Trạng thái chỉ đi tới, không quay lại.
-        </Text>
+        {prev && (
+          <Button type="text" icon={<RollbackOutlined />} disabled={flow.busy} onClick={flow.back}>
+            Về “{statusLabel(prev)}”
+          </Button>
+        )}
       </Flex>
-      {percentModal(grand)}
+      {flow.dialogNode}
     </SectionCard>
   )
 }
@@ -200,41 +253,60 @@ export function PaymentStatusCard({
 /** Ô trạng thái gọn trong bảng danh sách: tag + 1 nút nhỏ cho bước kế tiếp */
 export function PaymentStatusCompact({
   value,
-  onChange,
   grand,
-  paidNote,
+  actions,
+  notes = {},
   extra,
 }: {
   value: PaymentValue
-  onChange: (next: PaymentValue) => void
   grand: number
-  paidNote?: string
+  actions: PaymentActions
+  notes?: PaymentNotes
   /** Hiện thêm dưới tag (VD "Đã in mã") */
-  extra?: React.ReactNode
+  extra?: ReactNode
 }) {
-  const { askPercent, ship, percentModal } = usePaymentActions(value, onChange, {
-    paid: paidNote ?? 'Không chuyển ngược về “Chưa nhận tiền” được.',
-  })
+  const flow = usePaymentFlow(value, grand, actions, notes)
+  const prev = PREV_STATUS[value.status]
   return (
     <Flex vertical gap={4} align="flex-start">
-      <Flex gap={4} align="center">
+      <Flex gap={0} align="center">
         <PaymentTag {...value} />
         {value.status !== 'unpaid' && (
-          <Button type="text" size="small" icon={<EditOutlined />} title="Sửa % đã nhận" onClick={askPercent} />
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            title="Sửa % đã nhận"
+            aria-label="Sửa % đã nhận"
+            disabled={flow.busy}
+            onClick={flow.askPercent}
+            style={{ marginInlineStart: 4 }}
+          />
+        )}
+        {prev && (
+          <Button
+            type="text"
+            size="small"
+            icon={<RollbackOutlined />}
+            title={`Chuyển về “${statusLabel(prev)}”`}
+            aria-label={`Chuyển về ${statusLabel(prev)}`}
+            disabled={flow.busy}
+            onClick={flow.back}
+          />
         )}
       </Flex>
       {value.status === 'unpaid' && (
-        <Button size="small" icon={<CheckOutlined />} onClick={askPercent}>
+        <Button size="small" icon={<CheckOutlined />} loading={flow.busy} onClick={flow.askPaid}>
           Nhận tiền
         </Button>
       )}
       {value.status === 'paid' && (
-        <Button size="small" icon={<CarOutlined />} onClick={ship}>
+        <Button size="small" icon={<CarOutlined />} disabled={flow.busy} onClick={flow.ship}>
           Gửi bưu cục
         </Button>
       )}
       {extra}
-      {percentModal(grand)}
+      {flow.dialogNode}
     </Flex>
   )
 }

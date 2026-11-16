@@ -1,17 +1,16 @@
 import { useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { App, Button, Card, Checkbox, Col, DatePicker, Flex, Form, Input, InputNumber, Radio, Row, Select, Typography } from 'antd'
+import { App, Button, Card, Checkbox, Col, Flex, Form, Input, InputNumber, Radio, Row, Select, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import dayjs from 'dayjs'
 import { Link } from 'react-router'
 import { MoneyInput } from '../../components/MoneyInput'
 import { ImageDropzone, ImageThumbs, SectionCard } from '../../components/SectionCard'
 import { fmtMoney } from '../../lib/format'
-import { tierLabel } from '../products/catalog'
-import { shipText } from './calc'
+import { colorOf, printKindUnit, tierLabel, withCurrent } from '../products/catalog'
+import { printCounts, shipText } from './calc'
 import type { PricedLine, QuoteCalc } from './calc'
-import { COLORS, CUSTOM, FONTS, SIZES } from './constants'
-import { newItem } from './state'
+import { CUSTOM, FONTS } from './constants'
+import { fitToProduct, newItem } from './state'
 import type { FontKey, Product, QuoteContent, QuoteItem, QuoteState } from './types'
 import s from '../../components/Form.module.css'
 
@@ -63,23 +62,14 @@ function CustomerSection({ state, setState }: { state: QuoteState; setState: Set
             />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12}>
+        {/* Ngày báo giá không có ô sửa: tự lấy ngày bấm "Tạo báo giá" (createQuote) */}
+        <Col span={24}>
           <Form.Item label="Số điện thoại">
             <Input
               value={c.phone}
               onChange={(e) => setCustomer({ phone: e.target.value })}
               inputMode="tel"
               placeholder="09xx xxx xxx"
-            />
-          </Form.Item>
-        </Col>
-        <Col xs={24} sm={12}>
-          <Form.Item label="Ngày báo giá">
-            <DatePicker
-              value={state.date ? dayjs(state.date) : null}
-              onChange={(d) => setState((s) => ({ ...s, date: d ? d.format('YYYY-MM-DD') : '' }))}
-              format="DD/MM/YYYY"
-              style={{ width: '100%' }}
             />
           </Form.Item>
         </Col>
@@ -97,6 +87,54 @@ function CustomerSection({ state, setState }: { state: QuoteState; setState: Set
   )
 }
 
+/**
+ * Màu tag / kích thước theo sản phẩm mác áo (chụp vào báo giá). Lựa chọn cũ không còn trong sản phẩm vẫn hiện,
+ * để báo giá cũ hiện đúng. Sản phẩm không có màu / kích thước thì ẩn hàng đó.
+ */
+function TagOptions({ product, item, onChange }: { product: Product; item: QuoteItem; onChange: (patch: Partial<QuoteItem>) => void }) {
+  const colors = withCurrent(product.colors, item.color && colorOf(item.color), (c) => c.name)
+  const sizes = withCurrent(product.sizes, item.size, (v) => v)
+  if (!colors.length && !sizes.length) return null
+  return (
+    <div className={s.options}>
+      {colors.length > 0 && (
+        <Flex align="center" gap={6} wrap>
+          <span className={s.optLabel}>Màu tag</span>
+          <Radio.Group
+            size="small"
+            optionType="button"
+            buttonStyle="solid"
+            value={item.color}
+            onChange={(e) => onChange({ color: e.target.value })}
+            options={colors.map((c) => ({
+              value: c.name,
+              label: (
+                <>
+                  <span className={s.swatch} style={{ background: c.hex }} />
+                  {c.name}
+                </>
+              ),
+            }))}
+          />
+        </Flex>
+      )}
+      {sizes.length > 0 && (
+        <Flex align="center" gap={6} wrap>
+          <span className={s.optLabel}>Kích thước</span>
+          <Radio.Group
+            size="small"
+            optionType="button"
+            buttonStyle="solid"
+            value={item.size}
+            onChange={(e) => onChange({ size: e.target.value })}
+            options={sizes.map((v) => ({ value: v, label: v }))}
+          />
+        </Flex>
+      )}
+    </div>
+  )
+}
+
 // ---------- 2. Chi tiết đơn hàng ----------
 function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: QuoteCalc; setState: SetQuote }) {
   const [focusId, setFocusId] = useState<string | null>(null)
@@ -104,15 +142,30 @@ function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: Quot
   const patchItem = (id: string, patch: Partial<QuoteItem>) =>
     setState((s) => ({ ...s, items: s.items.map((it) => (it.id === id ? { ...it, ...patch } : it)) }))
   const removeItem = (id: string) => setState((s) => ({ ...s, items: s.items.filter((it) => it.id !== id) }))
-  const addItem = () => {
-    // Dòng mới lấy loại tag / màu / kích thước của dòng cuối
-    const item = newItem({ ...state.items.at(-1), qty: 0 })
-    setState((s) => ({ ...s, items: [...s.items, item] }))
-    setFocusId(item.id)
-  }
 
-  const productOptions = [
-    ...state.products.map((p) => ({ value: p.id, label: p.name })),
+  // Số lượng mác áo tự tính từ "Nội dung in": tag in chữ = số câu, tag in hình = số ảnh (withAutoQty).
+  // Mỗi cách tính chỉ một dòng; dòng "Sản phẩm khác" vẫn nhập số lượng / đơn giá tay.
+  const counts = printCounts(state.printContent, state.printImages.length)
+  const usedKinds = new Set(calc.rows.flatMap((r) => (r.product ? [r.product.printKind] : [])))
+  const addItem = (product?: Product) => {
+    const next = product ?? state.products.find((p) => !usedKinds.has(p.printKind))
+    const item = next ? newItem({ productId: next.id }, next) : { ...newItem({ productId: CUSTOM }), manual: true }
+    setState((s) => ({ ...s, items: [...s.items, item] }))
+    if (!next) setFocusId(item.id)
+  }
+  // Có câu / ảnh nhưng chưa có dòng tag tương ứng → gợi ý thêm
+  const missing = (['text', 'image'] as const).flatMap((kind) => {
+    const p = state.products.find((x) => x.printKind === kind)
+    return p && counts[kind] > 0 && !usedKinds.has(kind) ? [{ product: p, count: counts[kind] }] : []
+  })
+
+  const optionsFor = (item: QuoteItem) => [
+    ...state.products.map((p) => ({
+      value: p.id,
+      label: p.name,
+      // Đã có dòng khác cùng cách tính (số câu / số ảnh) → không chọn được
+      disabled: calc.rows.some((r) => r.item.id !== item.id && r.product?.printKind === p.printKind),
+    })),
     { value: CUSTOM, label: 'Sản phẩm khác…' },
   ]
 
@@ -121,7 +174,7 @@ function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: Quot
       step={2}
       title="Chi tiết đơn hàng"
       extra={
-        <Button size="small" icon={<PlusOutlined />} onClick={addItem}>
+        <Button size="small" icon={<PlusOutlined />} onClick={() => addItem()}>
           Thêm dòng
         </Button>
       }
@@ -137,9 +190,15 @@ function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: Quot
                 <Select
                   style={{ flex: 1, minWidth: 0 }}
                   value={product ? item.productId : CUSTOM}
-                  options={productOptions}
+                  options={optionsFor(item)}
                   onChange={(v: string) =>
-                    patchItem(item.id, v === CUSTOM ? { productId: v, manual: true, price: null } : { productId: v, manual: false })
+                    patchItem(
+                      item.id,
+                      v === CUSTOM
+                        ? { productId: v, manual: true, price: null }
+                        : // Đổi loại tag: màu / kích thước không có ở loại mới thì về lựa chọn đầu của loại đó
+                          { productId: v, manual: false, ...fitToProduct(state.products.find((p) => p.id === v), item) },
+                    )
                   }
                 />
                 <Button
@@ -153,38 +212,7 @@ function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: Quot
               </Flex>
 
               {product ? (
-                <div className={s.options}>
-                  <Flex align="center" gap={6} wrap>
-                    <span className={s.optLabel}>Màu tag</span>
-                    <Radio.Group
-                      size="small"
-                      optionType="button"
-                      buttonStyle="solid"
-                      value={item.color}
-                      onChange={(e) => patchItem(item.id, { color: e.target.value })}
-                      options={COLORS.map((c) => ({
-                        value: c.name,
-                        label: (
-                          <>
-                            <span className={s.swatch} style={{ background: c.swatch }} />
-                            {c.name}
-                          </>
-                        ),
-                      }))}
-                    />
-                  </Flex>
-                  <Flex align="center" gap={6} wrap>
-                    <span className={s.optLabel}>Kích thước</span>
-                    <Radio.Group
-                      size="small"
-                      optionType="button"
-                      buttonStyle="solid"
-                      value={item.size}
-                      onChange={(e) => patchItem(item.id, { size: e.target.value })}
-                      options={SIZES.map((v) => ({ value: v, label: v }))}
-                    />
-                  </Flex>
-                </div>
+                <TagOptions product={product} item={item} onChange={(patch) => patchItem(item.id, patch)} />
               ) : (
                 <Input
                   style={{ marginTop: 8 }}
@@ -194,43 +222,71 @@ function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: Quot
                 />
               )}
 
-              <div className={s.itemGrid}>
-                <label>
-                  <span className={s.fieldLabel}>Số lượng</span>
-                  <InputNumber<number>
-                    autoFocus={item.id === focusId}
-                    min={0}
-                    precision={0}
-                    inputMode="numeric"
-                    value={item.qty || null}
-                    placeholder="0"
-                    onChange={(v) => patchItem(item.id, { qty: Math.max(0, Math.floor(v ?? 0)) })}
-                    style={{ width: '100%' }}
-                    styles={{ input: { textAlign: 'center' } }}
+              {product ? (
+                // Mác áo: số lượng / đơn giá tự tính — chỉ ghi chú số lượng lấy từ đâu
+                <div className={s.hint}>
+                  <AutoQtyHint
+                    row={row}
+                    count={counts[product.printKind]}
+                    duplicate={calc.rows.slice(0, i).some((r) => r.product?.printKind === product.printKind)}
                   />
-                </label>
-                <label>
-                  <span className={s.fieldLabel}>Đơn giá</span>
-                  <MoneyInput
-                    value={row.price}
-                    placeholder="0"
-                    status={item.qty > 0 && row.price == null ? 'warning' : undefined}
-                    // Gõ giá = chuyển sang giá nhập tay
-                    onChange={(v) => patchItem(item.id, { price: v, manual: true })}
-                  />
-                </label>
-                <div>
-                  <span className={s.fieldLabel}>Thành tiền</span>
-                  <div className={s.lineTotal}>{row.total == null ? '—' : fmtMoney(row.total)}</div>
                 </div>
-              </div>
-              <div className={s.hint}>
-                <ItemHint row={row} onUseAuto={() => patchItem(item.id, { manual: false })} />
-              </div>
+              ) : (
+                <>
+                  <div className={s.itemGrid}>
+                    <label>
+                      <span className={s.fieldLabel}>Số lượng</span>
+                      <InputNumber<number>
+                        autoFocus={item.id === focusId}
+                        min={0}
+                        precision={0}
+                        inputMode="numeric"
+                        value={item.qty || null}
+                        placeholder="0"
+                        onChange={(v) => patchItem(item.id, { qty: Math.max(0, Math.floor(v ?? 0)) })}
+                        style={{ width: '100%' }}
+                        styles={{ input: { textAlign: 'center' } }}
+                      />
+                    </label>
+                    <label>
+                      <span className={s.fieldLabel}>Đơn giá</span>
+                      <MoneyInput
+                        value={row.price}
+                        placeholder="0"
+                        status={item.qty > 0 && row.price == null ? 'warning' : undefined}
+                        onChange={(v) => patchItem(item.id, { price: v, manual: true })}
+                      />
+                    </label>
+                    <div>
+                      <span className={s.fieldLabel}>Thành tiền</span>
+                      <div className={s.lineTotal}>{row.total == null ? '—' : fmtMoney(row.total)}</div>
+                    </div>
+                  </div>
+                  {item.qty > 0 && row.price == null && (
+                    <div className={s.hint}>
+                      <Text type="warning">⚠ Nhập đơn giá cho sản phẩm này.</Text>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )
         })}
       </div>
+      {missing.length > 0 && (
+        <Flex vertical gap={6} style={{ marginTop: 12 }}>
+          {missing.map(({ product, count }) => (
+            <Flex key={product.id} align="center" gap={8} wrap>
+              <Text type="warning">
+                ⚠ Có {count} {printKindUnit(product.printKind)} ở “Nội dung in” nhưng chưa có dòng {product.name}.
+              </Text>
+              <Button size="small" icon={<PlusOutlined />} onClick={() => addItem(product)}>
+                Thêm {product.name}
+              </Button>
+            </Flex>
+          ))}
+        </Flex>
+      )}
 
       <div className={s.ship}>
         <span className={s.fieldLabel}>Phí vận chuyển</span>
@@ -271,30 +327,24 @@ function ItemsSection({ state, calc, setState }: { state: QuoteState; calc: Quot
   )
 }
 
-function ItemHint({ row, onUseAuto }: { row: PricedLine; onUseAuto: () => void }) {
-  const { item, product, price, autoPrice, productQty } = row
-  if (!product) return item.qty > 0 && price == null ? <Text type="warning">⚠ Nhập đơn giá cho sản phẩm này.</Text> : null
-  if (!item.qty) return <Text type="secondary">Nhập số lượng để tính giá.</Text>
-  if (item.manual) {
-    return (
-      <>
-        <Text type="secondary">Giá nhập tay.</Text>
-        <Button type="link" size="small" onClick={onUseAuto}>
-          ↺ Dùng giá bảng ({autoPrice == null ? 'thương lượng' : fmtMoney(autoPrice)})
-        </Button>
-      </>
-    )
+/** Dòng mác áo: số lượng lấy từ "Nội dung in" (số câu / số ảnh), đơn giá theo bậc của bảng giá */
+function AutoQtyHint({ row, count, duplicate }: { row: PricedLine; count: number; duplicate: boolean }) {
+  const { item, product, price, tier } = row
+  if (!product) return null
+  const unit = printKindUnit(product.printKind)
+  if (duplicate) {
+    return <Text type="warning">⚠ Đã có dòng tính theo số {unit} ở trên — dòng này không tính tiền. Xoá dòng hoặc đổi loại.</Text>
   }
-  if (autoPrice == null) {
-    return (
-      <Text type="warning">
-        ⚠ {product.name} tổng {productQty} chiếc: giá thương lượng – hãy nhập đơn giá.
-      </Text>
-    )
+  if (!item.qty) return <Text type="secondary">Số lượng = số {unit} ở “Nội dung in” (chưa có {unit} nào).</Text>
+  // Báo giá đã khoá giữ số lượng đã lưu — có thể khác số câu / ảnh hiện tại (dữ liệu cũ)
+  const source = item.qty === count ? `${count} ${unit} ở “Nội dung in” → ` : ''
+  if (price == null) {
+    return <Text type="warning">⚠ {source}{item.qty} chiếc: giá thương lượng — sửa bảng giá ở mục Sản phẩm.</Text>
   }
   return (
     <Text type="secondary">
-      Theo bảng giá · {product.name} tổng {productQty} chiếc → bậc “{row.tier}”
+      {source}
+      {item.qty} chiếc · bậc “{tier}”
     </Text>
   )
 }
@@ -311,22 +361,26 @@ function PrintContentSection({
   onAddImages: (files: File[]) => void
   onRemoveImage: (id: string) => void
 }) {
+  const counts = printCounts(state.printContent, state.printImages.length)
   return (
     <SectionCard step={3} title="Nội dung in">
-      <Form.Item label="Chữ cần in lên tag">
+      <Form.Item
+        label={`Chữ cần in lên tag · ${counts.text} câu`}
+        extra="Đánh số 1. 2. 3. … (hoặc cách nhau một dòng trống). Mỗi câu = 1 tag in chữ."
+      >
         <Input.TextArea
           autoSize={{ minRows: 5 }}
           value={state.printContent}
           onChange={(e) => setState((s) => ({ ...s, printContent: e.target.value }))}
-          placeholder={'VD:\nMặt trước: Mộc Handmade – Since 2020\nMặt sau: Thank you for shopping with us ♡\nFont chữ viết tay, in màu nâu'}
+          placeholder={'VD:\n1. Gửi anh một cái ôm\ndưới hình hài chiếc áo.\n2. Chúc mừng sinh nhật!\n3. Cảm ơn vì đã luôn ở bên'}
         />
       </Form.Item>
-      <span className={s.fieldLabel}>Ảnh / thiết kế cần in</span>
+      <span className={s.fieldLabel}>Ảnh / thiết kế cần in · {counts.image} ảnh (mỗi ảnh = 1 tag in hình)</span>
       <ImageDropzone onFiles={onAddImages} />
       <ImageThumbs images={state.printImages} onRemove={onRemoveImage} />
       <Text type="secondary" className={s.help}>
-        Hiện thành mục “Nội dung in” trên báo giá. Để trống cả chữ lẫn ảnh thì không hiện. Danh sách câu trong ô
-        này dùng để tạo file mẫu câu (nút “Mẫu câu” ở trên).
+        Số lượng ở “Chi tiết đơn hàng” tự tính từ đây. Hiện thành mục “Nội dung in” trên báo giá; để trống cả chữ lẫn
+        ảnh thì không hiện. Danh sách câu dùng để tạo file mẫu câu (nút “Mẫu câu” ở trên).
       </Text>
     </SectionCard>
   )

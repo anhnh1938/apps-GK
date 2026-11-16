@@ -12,8 +12,9 @@ import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { priceSummary, PRODUCT_TYPES } from './catalog'
 import { createDefaultProducts, deleteProduct, setProductActive, useProducts } from './repo'
 import type { ProductDoc, ProductType } from './types'
+import fs from '../../components/Form.module.css'
 
-/** /san-pham — danh sách sản phẩm (mác áo có bảng giá theo số lượng; áo có giá / màu / size) */
+/** /san-pham — danh sách sản phẩm (mác áo có bảng giá theo số lượng; áo có giá; cả hai có màu / size) */
 export default function ProductListPage() {
   useDocumentTitle('Sản phẩm')
   const { message } = App.useApp()
@@ -68,9 +69,17 @@ export default function ProductListPage() {
     {
       title: 'Màu / size',
       render: (_, p) =>
-        p.type === 'shirt' ? (
+        p.colors.length || p.sizes.length ? (
           <>
-            {p.colors.join(', ') || '—'}
+            {p.colors.length
+              ? p.colors.map((c, i) => (
+                  <span key={c.name} style={{ whiteSpace: 'nowrap' }}>
+                    <span className={fs.swatch} style={{ background: c.hex }} />
+                    {c.name}
+                    {i < p.colors.length - 1 && ', '}
+                  </span>
+                ))
+              : '—'}
             <SubText>{p.sizes.join(' · ')}</SubText>
           </>
         ) : (

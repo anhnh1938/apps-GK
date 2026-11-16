@@ -9,7 +9,7 @@ Công cụ nội bộ cho shop **Góc Kể Studio (GK)**: đăng nhập bằng F
 | `/bao-gia`, `/bao-gia/moi`, `/bao-gia/:id` | Báo giá mác áo rời — port từ `D:\powerpoint\index.html` |
 | `/bao-gia/:id/mau-cau` | File mẫu câu của báo giá (tờ A4 ô 4×3cm) — port từ `D:\projects\tool tạo mẫu câu\a4-grid.html` |
 | `/don-ao`, `/don-ao/moi`, `/don-ao/:id` | Đơn áo |
-| `/san-pham`, `/san-pham/moi`, `/san-pham/:id` | Sản phẩm: mác áo (bảng giá theo số lượng) và áo (giá / màu / size) |
+| `/san-pham`, `/san-pham/moi`, `/san-pham/:id` | Sản phẩm: mác áo (bảng giá theo số lượng / màu / kích thước) và áo (giá / màu / size) |
 
 Hai bản HTML gốc là spec cho báo giá và mẫu câu. Tài nguyên thương hiệu và thông tin shop: `D:\projects\ảnh GK\CLAUDE.md`.
 
@@ -63,11 +63,12 @@ src/
 
 ## Trạng thái
 
-`unpaid` → `paid` (+ `paidPercent`) → `shipped`, chỉ đi tới (`canSelectStatus`, rules `validStatusChange`). UI: `PaymentStatusCard` (trang sửa: 3 bước + đúng 1 nút việc kế tiếp) và `PaymentStatusCompact` (bảng). Báo giá khoá từ `paid`, đơn áo khoá ở `shipped`. Đã gửi → thẻ Vận chuyển + "In mã vận chuyển" (tem có mã vạch, thu hộ = phần còn lại), in xong ghi `shipping.printedAt`.
+`unpaid` → `paid` (+ `paidPercent`) → `shipped`, đi tới từng bước, lùi được một bước khi bấm nhầm (`PREV_STATUS`, `backToUnpaidUpdate` / `backToPaidUpdate`, rules `validStatusChange`). UI: `PaymentStatusCard` (trang sửa: 3 bước + 1 nút việc kế tiếp + nút "Về …") và `PaymentStatusCompact` (bảng, nút ↶). Báo giá khoá từ `paid`, đơn áo khoá ở `shipped`; lùi về trước đó thì mở khoá. Đổi rules → publish lại trong Console. Từ "Đã nhận tiền" trở đi → thẻ Vận chuyển + "In mã vận chuyển" (tem có mã vạch, thu hộ = phần còn lại; in để dán gói trước khi mang ra bưu cục), in xong ghi `shipping.printedAt`.
 
 ## Sản phẩm & giá
 
-- Mác áo: bảng giá theo **tổng số lượng từng loại tag** (`tiers`, `tierIndex` / `tierLabel` trong `products/catalog.ts`). Báo giá chụp bảng giá lúc tạo (`products`), nút "Lấy bảng giá mới nhất". Gõ đơn giá = giá nhập tay (`manual`).
+- Mác áo: bảng giá theo **tổng số lượng từng loại tag** (`tiers`, `tierIndex` / `tierLabel` trong `products/catalog.ts`). Báo giá chụp bảng giá + màu + kích thước lúc tạo (`products`), nút "Lấy bảng giá mới nhất". Số lượng dòng mác áo **tự tính** từ Nội dung in (`withAutoQty` trong `quote/calc.ts`: `printKind` text = số câu `parseList`, image = số ảnh), trang sửa lưu / tạo theo bản đã tính (`effective`); báo giá đã khoá giữ số đã lưu. Không có ô số lượng / đơn giá cho mác áo — chỉ dòng "Sản phẩm khác" nhập tay. Ngày báo giá = ngày tạo (`createQuote`), không có ô sửa.
+- Màu / size: cả mác áo và áo đều có `colors: { name, hex }[]` + `sizes: string[]`, form sản phẩm dùng `Form.List` (màu: `ColorPicker` + tên, gợi ý `KNOWN_COLORS`). Báo giá / đơn chỉ hiện lựa chọn của sản phẩm, cộng lựa chọn cũ đã lưu (`withCurrent`); đổi loại → `fitToProduct` / `newOrderItem`. `sortOrder` không có ô trên form.
 - Áo: đơn lưu `productId` + `name` lúc đặt. Chưa có sản phẩm trên Firestore (hoặc không đọc được) → `FALLBACK_PRODUCTS`.
 - Logo `src/assets/logo.png`, QR `src/assets/qr.jpg` = ảnh nhúng của bản gốc (`LOGO_SRC`, `QR_SRC`). `BANK` (lib/payment.ts) phải khớp QR.
 

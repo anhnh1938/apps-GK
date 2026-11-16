@@ -4,7 +4,7 @@ import type { OrderContent, OrderItem, OrderTotals } from './types'
 
 /** Áo mới theo sản phẩm: giữ màu / size của `from` nếu sản phẩm có, giá theo sản phẩm */
 export function newOrderItem(product: ProductDoc | undefined, from: Partial<OrderItem> = {}): OrderItem {
-  const colors = product?.colors ?? []
+  const colors = (product?.colors ?? []).map((c) => c.name)
   const sizes = product?.sizes ?? []
   return {
     id: uid(),

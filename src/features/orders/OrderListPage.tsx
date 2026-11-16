@@ -1,29 +1,106 @@
 import { useMemo, useState } from 'react'
-import { App, Button, Card, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd'
+import { App, Button, Card, Flex, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { CheckCircleOutlined, DeleteOutlined, EditOutlined, EyeOutlined, LockOutlined, PlusOutlined } from '@ant-design/icons'
 import { Link, useNavigate } from 'react-router'
 import { ListFilters, Stats, SubText } from '../../components/ListToolbar'
 import { PageShell } from '../../components/PageShell'
 import { PaymentStatusCompact } from '../../components/PaymentStatus'
+import type { PaymentActions } from '../../components/PaymentStatus'
 import { firestoreErrorText, useLiveQuery } from '../../lib/firestoreHooks'
 import { fmtDateTime, fmtDay, fmtMoney, inDateRange, matchText, todayRange } from '../../lib/format'
 import type { DateRange } from '../../lib/format'
 import { PAY_STATUSES, paymentAmounts } from '../../lib/payment'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
-import { deleteOrder, ordersQuery, setOrderStatus, toOrder } from './repo'
-import { itemsSummary, orderCode } from './state'
-import type { OrderDoc, OrderStatus } from './types'
+import { colorOf } from '../products/catalog'
+import { useProducts } from '../products/repo'
+import { ORDER_PAYMENT_NOTES } from './constants'
+import {
+  deleteOrder,
+  markOrderPaid,
+  markOrderShipped,
+  ordersQuery,
+  revertOrderToPaid,
+  revertOrderToUnpaid,
+  setOrderPaidPercent,
+  toOrder,
+} from './repo'
+import { orderCode } from './state'
+import type { OrderDoc, OrderItem, OrderStatus } from './types'
 
 const amounts = (o: OrderDoc) => paymentAmounts(o.totals.grand, o.status, o.paidPercent)
+
+const dotStyle = {
+  display: 'inline-block',
+  width: 14,
+  height: 14,
+  borderRadius: '50%',
+  border: '1px solid rgba(0, 0, 0, 0.2)',
+  flex: 'none',
+} as const
+
+/** Số dòng tối đa trong ô bảng; đơn nhiều áo hơn thì ghi "… và N áo nữa" */
+const MAX_LINES = 8
+
+/**
+ * Liệt kê từng chiếc áo một dòng (đơn 2 áo giống nhau → 2 dòng, không ghi "×2"):
+ * số thứ tự · chấm màu (rê chuột xem tên màu) · loại áo · size
+ */
+function ItemsCell({ items, hexOf }: { items: OrderItem[]; hexOf: (it: OrderItem) => string }) {
+  const shirts = items.flatMap((it) => Array.from({ length: Math.max(0, it.qty) }, (_, n) => ({ it, key: `${it.id}-${n}` })))
+  if (!shirts.length) return <Typography.Text type="secondary">—</Typography.Text>
+  const shown = shirts.length > MAX_LINES ? shirts.slice(0, MAX_LINES - 1) : shirts
+  return (
+    <Flex vertical gap={4}>
+      {shown.map(({ it, key }, i) => (
+        <Flex key={key} align="center" gap={8}>
+          <Typography.Text type="secondary" style={{ width: 18, textAlign: 'right', flex: 'none' }}>
+            {i + 1}.
+          </Typography.Text>
+          <Tooltip title={it.color || 'Chưa chọn màu'}>
+            <span
+              role="img"
+              aria-label={it.color ? `Màu ${it.color}` : 'Chưa chọn màu'}
+              style={{ ...dotStyle, background: it.color ? hexOf(it) : 'transparent' }}
+            />
+          </Tooltip>
+          <span>{it.name}</span>
+          {it.size && <Tag style={{ marginInlineEnd: 0 }}>{it.size}</Tag>}
+        </Flex>
+      ))}
+      {shown.length < shirts.length && (
+        <Typography.Text type="secondary" style={{ paddingLeft: 26 }}>
+          … và {shirts.length - shown.length} áo nữa
+        </Typography.Text>
+      )}
+    </Flex>
+  )
+}
 
 /** /don-ao — danh sách đơn áo (realtime) */
 export default function OrderListPage() {
   useDocumentTitle('Đơn áo')
   const { message } = App.useApp()
+  // Trạng thái đi tới từng bước, lùi lại được một bước; "Đã mang ra bưu cục" thì đơn bị khoá.
+  // Lỗi: báo rồi ném lại để hộp thoại không đóng.
+  const fail = (err: unknown): never => {
+    message.error(firestoreErrorText(err))
+    throw err
+  }
+  const actionsFor = (o: OrderDoc): PaymentActions => ({
+    paid: (percent) => markOrderPaid(o.id, percent).catch(fail),
+    percent: (percent) => setOrderPaidPercent(o.id, percent).catch(fail),
+    shipped: () => markOrderShipped(o.id).catch(fail),
+    backToUnpaid: () => revertOrderToUnpaid(o.id).catch(fail),
+    backToPaid: () => revertOrderToPaid(o.id).catch(fail),
+  })
   const navigate = useNavigate()
   const q = useMemo(() => ordersQuery(), [])
   const { data, error } = useLiveQuery(q, toOrder)
+  // Đơn chỉ lưu tên màu → mã màu lấy theo sản phẩm hiện tại (màu lạ / sản phẩm đã xoá: theo tên màu quen thuộc)
+  const { products } = useProducts()
+  const hexOf = (it: OrderItem) =>
+    products?.find((p) => p.id === it.productId)?.colors.find((c) => c.name === it.color)?.hex ?? colorOf(it.color).hex
   const [filter, setFilter] = useState<OrderStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   // Mặc định xem đơn tạo hôm nay; xoá ô ngày để xem tất cả
@@ -65,7 +142,7 @@ export default function OrderListPage() {
         </>
       ),
     },
-    { title: 'Áo', render: (_, o) => itemsSummary(o.items) || <Typography.Text type="secondary">—</Typography.Text> },
+    { title: 'Áo', render: (_, o) => <ItemsCell items={o.items} hexOf={hexOf} /> },
     {
       title: 'Tổng tiền',
       align: 'right',
@@ -85,15 +162,14 @@ export default function OrderListPage() {
       title: 'Trạng thái',
       width: 210,
       render: (_, o) => (
-        // Chỉ đi một chiều: Chưa nhận tiền → Đã nhận tiền (%) → Đã mang ra bưu cục
+        // Chưa nhận tiền → Đã nhận tiền (%) → Đã mang ra bưu cục; nút ↶ lùi lại một bước
         <PaymentStatusCompact
           value={{ status: o.status, paidPercent: o.paidPercent }}
           grand={o.totals.grand}
-          onChange={(v) =>
-            setOrderStatus(o.id, v.status, v.paidPercent).catch((err) => message.error(firestoreErrorText(err)))
-          }
+          actions={actionsFor(o)}
+          notes={ORDER_PAYMENT_NOTES}
           extra={
-            o.status === 'shipped' &&
+            o.status !== 'unpaid' &&
             (o.shipping.printedAt ? (
               <Tag color="green" icon={<CheckCircleOutlined />}>
                 Đã in mã

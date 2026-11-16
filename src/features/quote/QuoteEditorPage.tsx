@@ -5,7 +5,7 @@ import { toBlob } from 'html-to-image'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EditorPage } from '../../components/EditorPage'
 import { PaymentStatusCard, PaymentTag } from '../../components/PaymentStatus'
-import type { PaymentValue } from '../../components/PaymentStatus'
+import type { PaymentActions, PaymentValue } from '../../components/PaymentStatus'
 import { ShippingCard } from '../../components/ShippingCard'
 import { ShippingLabel } from '../../components/ShippingLabel'
 import { SaveIndicator } from '../../components/Status'
@@ -15,14 +15,15 @@ import { fmtDate, slug } from '../../lib/format'
 import { addImage, readImageForFirestore, removeImage, useImages } from '../../lib/images'
 import type { PendingImage } from '../../lib/images'
 import { EMPTY_SHIPPING, paymentAmounts } from '../../lib/payment'
+import type { StatusAtPatch } from '../../lib/statusFields'
 import { useAutosave } from '../../lib/useAutosave'
 import { useBeforeUnload } from '../../lib/useBeforeUnload'
 import { useDocumentTitle } from '../../lib/useDocumentTitle'
 import { usePasteImages } from '../../lib/usePasteImages'
 import { useShipping } from '../../lib/useShipping'
 import { useProducts } from '../products/repo'
-import { computeQuote, quoteItemsSummary } from './calc'
-import { MAX_PRINT_IMAGE, tagProductsOf } from './constants'
+import { computeQuote, quoteItemsSummary, withAutoQty } from './calc'
+import { MAX_PRINT_IMAGE, QUOTE_PAYMENT_NOTES, tagProductsOf } from './constants'
 import { QuoteForm } from './QuoteForm'
 import { QuotePreview } from './QuotePreview'
 import {
@@ -33,8 +34,12 @@ import {
   quoteRef,
   saveQuoteContent,
   saveQuoteShipping,
-  setQuoteStatus,
+  markQuotePaid,
+  markQuoteShipped,
+  setQuotePaidPercent,
   toQuote,
+  revertQuoteToPaid,
+  revertQuoteToUnpaid,
 } from './repo'
 import { defaultContent } from './state'
 import type { Product, QuoteContent, QuoteDoc, QuoteState } from './types'
@@ -123,11 +128,11 @@ function QuoteEditor({ quote, initial }: { quote: QuoteDoc | null; initial: Quot
 
   // Đã nhận tiền (hoặc đã mang ra bưu cục) → khoá: chỉ xem, không sửa, không xoá. Rules Firestore cũng chặn.
   const locked = !isNew && pay.status !== 'unpaid'
-  const shipped = !isNew && pay.status === 'shipped'
+  // Đã nhận tiền trở đi: nhập vận chuyển + in mã (in tem dán gói trước khi mang ra bưu cục)
+  const shippable = !isNew && pay.status !== 'unpaid'
 
   // Đã có trên Firestore: tự lưu nội dung. Form mới: không lưu gì cho tới khi bấm "Tạo".
   const save = useCallback((c: QuoteContent) => saveQuoteContent(quote?.id ?? '', c), [quote?.id])
-  const autosave = useAutosave(content, save, { enabled: !isNew && !locked })
 
   // Vận chuyển (khi đã mang ra bưu cục) — sửa được kể cả khi báo giá đã khoá
   const saveShipping = useCallback(
@@ -143,10 +148,19 @@ function QuoteEditor({ quote, initial }: { quote: QuoteDoc | null; initial: Quot
   const { products: catalogProducts } = useProducts()
   const catalog = useMemo(() => tagProductsOf(catalogProducts), [catalogProducts])
 
-  const { images: stored } = useImages(ref, 'print')
+  const { images: stored, loading: imagesLoading } = useImages(ref, 'print')
   const images = isNew ? pending : stored
-  const state: QuoteState = useMemo(() => ({ ...content, printImages: images }), [content, images])
-  const calc = useMemo(() => computeQuote(content), [content])
+  // Số lượng mác áo tự tính: tag in chữ = số câu, tag in hình = số ảnh của "Nội dung in".
+  // Báo giá đã khoá (hoặc ảnh chưa tải xong) giữ nguyên số đã lưu.
+  const imagesReady = isNew || !imagesLoading
+  const effective = useMemo(
+    () => (locked || !imagesReady ? content : withAutoQty(content, images.length)),
+    [content, images.length, locked, imagesReady],
+  )
+  const state: QuoteState = useMemo(() => ({ ...effective, printImages: images }), [effective, images])
+  const calc = useMemo(() => computeQuote(effective), [effective])
+  // Tự lưu theo bản đã tính số lượng (thêm / xoá ảnh cũng lưu lại số lượng + tổng tiền)
+  const autosave = useAutosave(effective, save, { enabled: !isNew && !locked })
 
   const onAddImages = useCallback(
     (files: File[]) => {
@@ -174,27 +188,42 @@ function QuoteEditor({ quote, initial }: { quote: QuoteDoc | null; initial: Quot
     removeImage(ref, imageId).catch((err) => message.error(firestoreErrorText(err)))
   }
 
-  // Trạng thái chỉ đi một chiều (PaymentStatusSelect chặn sẵn): Chưa nhận → Đã nhận (%) → Đã mang ra bưu cục
-  const changePay = async (next: PaymentValue) => {
-    const prev = pay
-    setPay(next)
-    setStatusAt((at) => ({ ...at, [next.status]: at[next.status] ?? new Date() }))
+  // Trạng thái: hiện ngay trên giao diện rồi ghi; ghi lỗi thì trả lại như cũ + báo lỗi (và ném lại cho hộp thoại)
+  // `at`: mốc giờ đổi theo (Date = vừa xong bước đó, null = bỏ mốc khi lùi lại)
+  const applyPayment = async (next: PaymentValue, at: StatusAtPatch | null, write: (id: string) => Promise<void>) => {
     if (!quote) return
+    const prev = { pay, statusAt }
+    setPay(next)
+    if (at) setStatusAt((cur) => ({ ...cur, ...at }))
     try {
-      // Sắp khoá: lưu nốt nội dung đang sửa trước, vì đã nhận tiền thì rules không cho ghi nội dung nữa
-      if (prev.status === 'unpaid') await saveQuoteContent(quote.id, content)
-      await setQuoteStatus(quote.id, next.status, next.paidPercent)
+      await write(quote.id)
     } catch (err) {
-      setPay(prev)
+      setPay(prev.pay)
+      setStatusAt(prev.statusAt)
       message.error(firestoreErrorText(err))
+      throw err
     }
+  }
+  const paymentActions: PaymentActions = {
+    // Đã nhận tiền → báo giá bị khoá: lưu nốt nội dung đang sửa trước, sau đó rules không cho ghi nội dung nữa
+    paid: (percent) =>
+      applyPayment({ status: 'paid', paidPercent: percent }, { paid: new Date() }, async (id) => {
+        await saveQuoteContent(id, effective)
+        await markQuotePaid(id, percent)
+      }),
+    percent: (percent) => applyPayment({ ...pay, paidPercent: percent }, null, (id) => setQuotePaidPercent(id, percent)),
+    shipped: () => applyPayment({ ...pay, status: 'shipped' }, { shipped: new Date() }, (id) => markQuoteShipped(id)),
+    // Lùi về "Chưa nhận tiền" → báo giá mở khoá, sửa / xoá được lại
+    backToUnpaid: () =>
+      applyPayment({ status: 'unpaid', paidPercent: null }, { paid: null, shipped: null }, (id) => revertQuoteToUnpaid(id)),
+    backToPaid: () => applyPayment({ ...pay, status: 'paid' }, { shipped: null }, (id) => revertQuoteToPaid(id)),
   }
 
   const create = async () => {
     setCreating(true)
     try {
       // Báo giá mới luôn bắt đầu ở "Chưa nhận tiền"; đổi trạng thái sau khi tạo
-      const id = await createQuote(content, 'unpaid', null, pending)
+      const id = await createQuote(effective, pending)
       message.success('Đã tạo báo giá')
       navigate(`/bao-gia/${id}`, { replace: true })
     } catch (err) {
@@ -285,7 +314,7 @@ function QuoteEditor({ quote, initial }: { quote: QuoteDoc | null; initial: Quot
                 Mẫu câu
               </Button>
             )}
-            {shipped && (
+            {shippable && (
               <Button icon={<CarOutlined />} onClick={shipping.print}>
                 In mã vận chuyển
               </Button>
@@ -308,13 +337,13 @@ function QuoteEditor({ quote, initial }: { quote: QuoteDoc | null; initial: Quot
             {!isNew && (
               <PaymentStatusCard
                 value={pay}
-                onChange={(v) => void changePay(v)}
+                actions={paymentActions}
                 grand={calc.grand}
                 statusAt={statusAt}
-                paidNote="Sau khi nhận tiền, báo giá sẽ bị khoá: không sửa, không xoá được nữa. Không chuyển ngược lại được."
+                notes={QUOTE_PAYMENT_NOTES}
               />
             )}
-            {shipped && (
+            {shippable && (
               <ShippingCard
                 value={shipping.value}
                 onChange={shipping.setValue}
@@ -348,14 +377,14 @@ function QuoteEditor({ quote, initial }: { quote: QuoteDoc | null; initial: Quot
         preview={<QuotePreview ref={previewRef} state={state} calc={calc} payment={pay} />}
         previewWidth="800px"
       />
-      {shipped && quote && (
+      {shippable && quote && (
         <ShippingLabel
           data={{
             code: quoteCode(quote.id),
             carrier: shipping.value.carrier,
             trackingCode: shipping.value.trackingCode,
             recipient: content.customer,
-            contents: quoteItemsSummary(content),
+            contents: quoteItemsSummary(effective),
             cod: paymentAmounts(calc.grand, pay.status, pay.paidPercent).remaining,
           }}
         />

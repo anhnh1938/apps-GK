@@ -2,14 +2,25 @@ import { addDoc, collection, doc, getDocs, limit, orderBy, query, serverTimestam
 import type { DocumentSnapshot } from 'firebase/firestore'
 import { COL, currentEmail, db } from '../../lib/firebase'
 import { toDate } from '../../lib/firestoreHooks'
+import { todayIso } from '../../lib/format'
 import { addImageSrc, deleteWithImages } from '../../lib/images'
 import type { PendingImage } from '../../lib/images'
 import type { ShippingInfo } from '../../lib/payment'
-import { initialStatusFields, printedUpdate, readStatusFields, shippingUpdate, statusUpdate } from '../../lib/statusFields'
+import {
+  backToPaidUpdate,
+  backToUnpaidUpdate,
+  initialStatusFields,
+  paidUpdate,
+  percentUpdate,
+  printedUpdate,
+  readStatusFields,
+  shippedUpdate,
+  shippingUpdate,
+} from '../../lib/statusFields'
 import { computeQuote } from './calc'
 import { defaultContent, newItem } from './state'
-import { sortTiers } from '../products/catalog'
-import type { Product, QuoteContent, QuoteDoc, QuoteStatus, Totals } from './types'
+import { LEGACY_TAG_COLORS, LEGACY_TAG_SIZES, sortTiers, toColors, toPrintKind, toSizes } from '../products/catalog'
+import type { Product, QuoteContent, QuoteDoc, Totals } from './types'
 
 // Báo giá mác áo rời: collection gk_quotes. Cấu trúc đầy đủ: docs/firestore.md
 
@@ -24,9 +35,18 @@ export function contentOf(q: QuoteContent): QuoteContent {
 
 // Báo giá cũ lưu bảng giá dạng `prices: [5 giá]` theo 5 bậc cố định 1 / 10 / 20 / 50 / 100 chiếc
 const LEGACY_TIER_MINS = [1, 10, 20, 50, 100]
-function toProductSnapshot(p: Product & { prices?: (number | null)[] }): Product {
-  if (Array.isArray(p.tiers)) return { id: p.id, name: p.name, tiers: sortTiers(p.tiers) }
-  return { id: p.id, name: p.name, tiers: LEGACY_TIER_MINS.map((min, i) => ({ min, price: p.prices?.[i] ?? null })) }
+function toProductSnapshot(p: Partial<Product> & { prices?: (number | null)[] }): Product {
+  return {
+    id: String(p.id ?? ''),
+    name: String(p.name ?? ''),
+    tiers: Array.isArray(p.tiers)
+      ? sortTiers(p.tiers)
+      : LEGACY_TIER_MINS.map((min, i) => ({ min, price: p.prices?.[i] ?? null })),
+    printKind: toPrintKind(p.printKind, String(p.id ?? ''), String(p.name ?? '')),
+    // Báo giá tạo trước khi mác áo có màu / kích thước riêng: dùng lựa chọn cố định cũ (Trắng / Be, 3 kích thước)
+    colors: Array.isArray(p.colors) ? toColors(p.colors) : LEGACY_TAG_COLORS,
+    sizes: Array.isArray(p.sizes) ? toSizes(p.sizes) : LEGACY_TAG_SIZES,
+  }
 }
 
 /** Document Firestore → QuoteDoc, điền mặc định cho field thiếu (dữ liệu cũ / sửa tay trong Console) */
@@ -61,16 +81,14 @@ export async function latestQuoteContent(): Promise<QuoteContent | null> {
   return snap.empty ? null : contentOf(toQuote(snap.docs[0]))
 }
 
-/** Ghi báo giá mới lên Firestore — CHỈ gọi khi người dùng bấm "Tạo báo giá". Trả về id. */
-export async function createQuote(
-  content: QuoteContent,
-  status: QuoteStatus,
-  paidPercent: number | null,
-  images: PendingImage[] = [],
-) {
-  // Tạo ở "Chưa nhận tiền" rồi mới thêm ảnh: đã nhận tiền thì rules khoá, không thêm ảnh được nữa
+/**
+ * Ghi báo giá mới lên Firestore (luôn ở "Chưa nhận tiền") — CHỈ gọi khi bấm "Tạo báo giá". Trả về id.
+ * Ngày báo giá = ngày bấm tạo (không có ô sửa ngày).
+ */
+export async function createQuote(content: QuoteContent, images: PendingImage[] = []) {
   const ref = await addDoc(collection(db, COL.quotes), {
     ...content,
+    date: todayIso(),
     totals: totalsOf(content),
     ...initialStatusFields(),
     createdAt: serverTimestamp(),
@@ -78,7 +96,6 @@ export async function createQuote(
     ...stamp(),
   })
   for (const img of images) await addImageSrc(ref, img.kind, img.name, img.src)
-  if (status !== 'unpaid') await setQuoteStatus(ref.id, status, paidPercent)
   return ref.id
 }
 
@@ -86,8 +103,14 @@ export async function createQuote(
 export const saveQuoteContent = (id: string, content: QuoteContent) =>
   updateDoc(quoteRef(id), { ...content, totals: totalsOf(content), ...stamp() })
 
-export const setQuoteStatus = (id: string, status: QuoteStatus, paidPercent: number | null) =>
-  updateDoc(quoteRef(id), { ...statusUpdate(status, paidPercent), ...stamp() })
+// Trạng thái: đi tới từng bước, lùi lại được một bước. Đã nhận tiền thì báo giá bị khoá → trang sửa lưu nốt nội dung
+// trước khi gọi markQuotePaid; lùi về "Chưa nhận tiền" thì mở khoá lại.
+export const markQuotePaid = (id: string, percent: number) => updateDoc(quoteRef(id), { ...paidUpdate(percent), ...stamp() })
+export const setQuotePaidPercent = (id: string, percent: number) =>
+  updateDoc(quoteRef(id), { ...percentUpdate(percent), ...stamp() })
+export const markQuoteShipped = (id: string) => updateDoc(quoteRef(id), { ...shippedUpdate(), ...stamp() })
+export const revertQuoteToUnpaid = (id: string) => updateDoc(quoteRef(id), { ...backToUnpaidUpdate(), ...stamp() })
+export const revertQuoteToPaid = (id: string) => updateDoc(quoteRef(id), { ...backToPaidUpdate(), ...stamp() })
 
 export const saveQuoteShipping = (id: string, s: Pick<ShippingInfo, 'carrier' | 'trackingCode'>) =>
   updateDoc(quoteRef(id), { ...shippingUpdate(s), ...stamp() })

@@ -287,13 +287,22 @@ const fsFields = (o) =>
 
 // Sản phẩm + cách tính phải giống src/features/products/catalog.ts và src/features/quote/calc.ts
 const tierList = (prices) => [1, 10, 20, 50, 100].map((min, i) => ({ min, price: prices[i] }))
+// Màu = { name, hex } (mã màu giống KNOWN_COLORS trong catalog.ts)
+const HEX = { Trắng: '#ffffff', Be: '#e8d9bf', Đen: '#1c1917', 'Xanh than': '#1f2a44' }
+const colorList = (names) => names.map((name) => ({ name, hex: HEX[name] }))
+const TAG_COLORS = colorList(['Trắng', 'Be'])
+const TAG_SIZES = ['4 × 6 cm gấp đôi', '3 × 5 cm', '1.5 × 6 cm', '4 × 8 cm gấp đôi']
 const CATALOG = {
-  chu: { type: 'tag', name: 'Tag in chữ', active: true, note: '', tiers: tierList([28000, 25000, 22000, 20000, 18000]), price: null, colors: [], sizes: [], spec: '', sortOrder: 1 },
-  hinh: { type: 'tag', name: 'Tag in hình', active: true, note: '', tiers: tierList([33000, 30000, 27000, 25000, 23000]), price: null, colors: [], sizes: [], spec: '', sortOrder: 2 },
-  thun: { type: 'shirt', name: 'Áo thun', active: true, note: 'Giá đã gồm tối đa 2 tag', tiers: [], price: 229000, colors: ['Xanh than', 'Trắng', 'Đen'], sizes: ['XS', 'S', 'M', 'L', 'XL'], spec: 'Cotton 100% · 250 gsm · Regular · Unisex, cổ tròn', sortOrder: 3 },
-  polo: { type: 'shirt', name: 'Áo polo', active: true, note: 'Giá đã gồm tối đa 2 tag', tiers: [], price: 269000, colors: ['Đen', 'Trắng', 'Xanh than'], sizes: ['M', 'L', 'XL', '2XL'], spec: 'Spandex Polyester Lacoste · 250 gsm · Regular fit, cổ bẻ', sortOrder: 4 },
+  chu: { type: 'tag', name: 'Tag in chữ', active: true, note: '', tiers: tierList([28000, 25000, 22000, 20000, 18000]), printKind: 'text', price: null, colors: TAG_COLORS, sizes: TAG_SIZES, spec: '', sortOrder: 1 },
+  hinh: { type: 'tag', name: 'Tag in hình', active: true, note: '', tiers: tierList([33000, 30000, 27000, 25000, 23000]), printKind: 'image', price: null, colors: TAG_COLORS, sizes: TAG_SIZES, spec: '', sortOrder: 2 },
+  thun: { type: 'shirt', name: 'Áo thun', active: true, note: 'Giá đã gồm tối đa 2 tag', tiers: [], printKind: 'text', price: 229000, colors: colorList(['Xanh than', 'Trắng', 'Đen']), sizes: ['XS', 'S', 'M', 'L', 'XL'], spec: 'Cotton 100% · 250 gsm · Regular · Unisex, cổ tròn', sortOrder: 3 },
+  polo: { type: 'shirt', name: 'Áo polo', active: true, note: 'Giá đã gồm tối đa 2 tag', tiers: [], printKind: 'text', price: 269000, colors: colorList(['Đen', 'Trắng', 'Xanh than']), sizes: ['M', 'L', 'XL', '2XL'], spec: 'Spandex Polyester Lacoste · 250 gsm · Regular fit, cổ bẻ', sortOrder: 4 },
 }
-const PRODUCTS = ['chu', 'hinh'].map((id) => ({ id, name: CATALOG[id].name, tiers: CATALOG[id].tiers }))
+// Bản chụp sản phẩm trong báo giá (giống tagProductsOf trong src/features/quote/constants.ts)
+const PRODUCTS = ['chu', 'hinh'].map((id) => {
+  const { name, tiers, printKind, colors, sizes } = CATALOG[id]
+  return { id, name, tiers, printKind, colors, sizes }
+})
 function quoteTotals(items, ship) {
   const byProduct = {}
   for (const it of items) byProduct[it.productId] = (byProduct[it.productId] ?? 0) + it.qty
@@ -329,7 +338,7 @@ function sampleDocs() {
   const tag = (id, productId, color, size, qty) => ({ id, productId, name: '', color, size, qty, price: null, manual: false })
   const quoteBase = {
     title: 'BẢNG GIÁ TAG IN',
-    subtitle: 'Kích thước: 4 × 6 cm · 3 × 5 cm · 1.5 × 6 cm',
+    subtitle: 'Kích thước: 4 × 6 cm gấp đôi · 3 × 5 cm · 1.5 × 6 cm · 4 × 8 cm gấp đôi',
     notes: 'Màu in: In đầy đủ màu theo thiết kế.\nĐơn giá tính theo số lượng của từng loại tag.',
     font: 'inter',
     showPriceTables: true,
@@ -340,8 +349,9 @@ function sampleDocs() {
     seed: true,
   }
 
-  const q1Items = [tag('s1a', 'chu', 'Be', '4 × 6 cm', 42), tag('s1b', 'hinh', 'Trắng', '3 × 5 cm', 3)]
-  const q2Items = [tag('s2a', 'chu', 'Trắng', '1.5 × 6 cm', 12)]
+  // Số lượng tag in chữ = số câu của printContent bên dưới (app tự tính như vậy); mẫu không có ảnh → không có tag in hình
+  const q1Items = [tag('s1a', 'chu', 'Be', '4 × 6 cm gấp đôi', 5)]
+  const q2Items = [tag('s2a', 'chu', 'Trắng', '1.5 × 6 cm', 3)]
   const quotes = {
     'sample-quote-1': {
       ...quoteBase,
